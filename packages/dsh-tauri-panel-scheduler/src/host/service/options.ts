@@ -131,7 +131,7 @@ async function collectModels(ctx: HostContext): Promise<{ models: ModelOption[],
         })
       }
     }
-const defaultModel = current == null
+    const defaultModel = current == null
       ? (found[0] ?? null)
       : (found.find(item => item.provider === current.provider && item.model === current.model) ?? found[0] ?? null)
     return { models: found, failures, defaultModel }

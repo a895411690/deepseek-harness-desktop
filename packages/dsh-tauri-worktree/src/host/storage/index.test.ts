@@ -125,10 +125,17 @@ describe('assertSafeSessionId（路径穿越防护）', () => {
 
   it('拒绝目录分隔符与遍历序列', () => {
     const bad = [
-      '../evil', '..', '.', '',
-      'a/b', '..\\..', 'a\\b',
-      '/etc/passwd', 'C:/x',
-      'a:b', 'a b',
+      '../evil',
+      '..',
+      '.',
+      '',
+      'a/b',
+      '..\\..',
+      'a\\b',
+      '/etc/passwd',
+      'C:/x',
+      'a:b',
+      'a b',
     ]
     for (const id of bad)
       expect(() => assertSafeSessionId(id), `should reject ${JSON.stringify(id)}`).toThrow()

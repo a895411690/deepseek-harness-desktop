@@ -8,6 +8,9 @@ export default antfu({
   ignores: [
     'AGENTS.*',
     'docs',
+    // 审查/同步记录报告：内容含 TS 示例代码块，作为文档不做样式 lint
+    // （markdown 示例会触发 antfu 逐行风格规则，与可读性目标冲突）。
+    'REVIEW-*.md',
   ],
 }, {
   // 插件包是库包而非应用壳：client 侧文件按 host/client 双面设计，

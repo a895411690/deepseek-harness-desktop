@@ -17,7 +17,7 @@ import { gitToplevel } from '../service/git'
 import { checkoutToLocalAndHandback, inheritSessionIntoWorktree } from '../service/handoff'
 import { discardWorktree, ensureWorktree, worktreeKey, worktreePath } from '../service/operation'
 import { findSession, resolveProjectPath } from '../service/session'
-import { loadBinding, assertSafeSessionId } from '../storage'
+import { assertSafeSessionId, loadBinding } from '../storage'
 
 /** 路由层统一校验 sessionId 合法性；非法返回 400，合法返回原值。 */
 function safeSessionIdOr400(sessionId: string): string | [400, { error: string }] {

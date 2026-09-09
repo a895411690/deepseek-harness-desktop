@@ -89,7 +89,7 @@ export function validateSchedule(schedule: unknown): schedule is SchedulerSchedu
   if (value.kind === 'monthly')
     return Number.isInteger(value.day) && (value.day as number) >= 1 && (value.day as number) <= 31 && typeof value.time === 'string' && parseTimeToMinutes(value.time) !== undefined
   if (value.kind === 'weekly')
-    return typeof value.time === 'string' && parseTimeToMinutes(value.time) !== undefined && Array.isArray(value.weekdays) && value.weekdays.length > 0 && value.weekdays.every(day => Object.prototype.hasOwnProperty.call(WEEKDAY_TO_CRON_DAY, day as Weekday))
+    return typeof value.time === 'string' && parseTimeToMinutes(value.time) !== undefined && Array.isArray(value.weekdays) && value.weekdays.length > 0 && value.weekdays.every(day => Object.hasOwn(WEEKDAY_TO_CRON_DAY, day as Weekday))
   return false
 }
 

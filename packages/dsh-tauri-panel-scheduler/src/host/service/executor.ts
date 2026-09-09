@@ -130,10 +130,16 @@ export function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Pro
   // finally 会立刻执行，计时器在第一次 tick 前就被清除，超时分支永远不触发。
   // 这里用显式 timer：先到者定胜负，promise 先到则清 timer；timer 先到则返回 false。
   return new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs)
+    const timer = setTimeout(resolve, timeoutMs, false)
     promise.then(
-      () => { clearTimeout(timer); resolve(true) },
-      () => { clearTimeout(timer); resolve(false) },
+      () => {
+        clearTimeout(timer)
+        resolve(true)
+      },
+      () => {
+        clearTimeout(timer)
+        resolve(false)
+      },
     )
   })
 }

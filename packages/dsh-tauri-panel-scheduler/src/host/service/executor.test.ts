@@ -99,7 +99,10 @@ describe('settlesWithin', () => {
       const pending = new Promise<void>(() => {})
       const resultPromise = settlesWithin(pending, 50)
       const asserted = resultPromise.then(
-        (value) => { expect(value).toBe(false); return true },
+        (value) => {
+          expect(value).toBe(false)
+          return true
+        },
         () => false,
       )
       await vi.advanceTimersByTimeAsync(50)
@@ -114,7 +117,9 @@ describe('settlesWithin', () => {
     vi.useFakeTimers()
     try {
       let settle!: (value: string) => void
-      const pending = new Promise<string>((resolve) => { settle = resolve })
+      const pending = new Promise<string>((resolve) => {
+        settle = resolve
+      })
       const resultPromise = settlesWithin(pending, 10_000)
       settle('early')
       const value = await resultPromise

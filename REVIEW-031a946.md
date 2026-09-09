@@ -59,7 +59,7 @@
 - 位置：`packages/dsh-tauri-panel-scheduler/src/host/service/executor.ts:170-182`
   ```ts
   try {
-    return Promise.race([ promise.then(…), new Promise((resolve)=>{ timer=setTimeout(resolve, timeoutMs,false) }) ])
+    return Promise.race([ promise.then((v) => v, () => false), new Promise((resolve)=>{ timer=setTimeout(resolve, timeoutMs,false) }) ])
   } finally { if (timer) clearTimeout(timer) }
   ```
   注意：`finally` 块在 `Promise.race(...)` **构造完成后同步立即执行**（无需等任何一个子 Promise 完成），所以计时器在创建后立刻被清除，`timeoutMs` 分支永远不会触发；`settlesWithin` 实际等于 `promise.then(()=>true,()=>false)`。
@@ -236,3 +236,15 @@
 
 ### 附：§9 的「#10 build gate 断言」— ✅ 已落地
 §9 正文引用的「见 #10」仅指一个建议性小改进（在 build 门禁里补一条「client bundle 内联 CssRender」断言），未作为正式发现立项。现已在 `scripts/build-plugins.ts` 落地为常驻门禁 `verifyClientBundleInlineCssRender`：build 后扫描 `dsh-tauri/dist/client.cjs`，禁止外部 `require('css-render')` 残留、并要求存在 CssRender 内联体。`pnpm build:plugins` 全程验证通过（9 插件部署 + 校验）。与既有 `verifyDeployedPackages` + `verifyMaterialized` 合璧，css-render 内联从「一次实证」升级为「每次构建强制」。此为工程 `eae2c18` 提交。
+
+---
+
+## 附：upstream 同步记录（merge 031a946..eec5431，136 提交）— ✅
+
+为跟上官方基线，将本仓库同步到 upstream/main（136 个新提交），采用 **merge 方式**（保留本地 6 个修复提交，形成 merge commit `893d9d6`）。
+
+- **冲突解决（6 文件）**：`schedule.ts`（采用 upstream monthly 新功能 + 保留本地 ES2021 兼容 hasOwnProperty + 修复编辑引入的重复函数）、`options.ts`（采用 upstream `current == null` 简洁收窄）、`executor.test.ts`（upstream 无扩展名风格 + 保留本地 settlesWithin 用例）、`model-picker.tsx`/`menu.tsx`（采用 upstream `dsh-tauri-ui/client` 重构：Icon/useMountStyle）、`worktree routes`（保留本地 `assertSafeSessionId` + upstream 无扩展名风格）。
+- **合并暴露的修复**：`types/stubs/dsh-client-ui-primitives.d.ts` 的 `MenuProps.onSelect` 签名错误（stub 写成 `(entry: MenuEntry)`，真实包为 `(id: string)`）——本地 typecheck 门禁暴露并修正；重新构建 dsh-tauri-ui / dsh-tauri 的 dist（upstream 引入新 client 导出）+ `pnpm install` 同步 workspace 链接。
+- **验证（合并后基线）**：`cargo test --lib` **501/501**（含 upstream 新增测试）、scheduler `vitest` 25/25 + typecheck 全绿、worktree `vitest` 67/67 + typecheck 全绿、`pnpm build:plugins` 全程通过（含 css-render 内联断言）。
+- **本地修复保留确认**：merge commit 中 `launch.rs` 锁内解析、`assertSafeSessionId`、`settlesWithin` 修复均完好。
+- 状态：已推送 `68e20a2..893d9d6` 到 fork origin/main；本地与 origin 同步，基线吸收 upstream 全部提交（本地仅领先 7 = 6 修复 + merge）。
