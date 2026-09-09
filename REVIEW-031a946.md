@@ -234,5 +234,5 @@
 - `settlesWithin` timeout 分支 → `settlesWithin` describe（executor.test.ts，含 `getTimerCount()===0` 泄漏断言）
 - `read_manifest` 读错误 / retention 目录外 path → `read_manifest_read_error_is_not_empty` + `refuses_to_delete_outside_backup_dir` / `rejects_dotdot_escape_path`
 
-### 附：§9 的「#10 build gate 断言」说明
-§9 正文引用了「见 #10」的字样，但该指针仅指代一个**建议性**的小改进（在 build 门禁里补一条「client bundle 内联 CssRender」断言），并未作为正式发现立项、也无独立小节。当前 `verifyDeployedPackages` + `verifyMaterialized` 双门禁已恢复，css-render 内联经实证不构成回归；#10 若需落地可以作为后续加固项，不影响本报告结论。
+### 附：§9 的「#10 build gate 断言」— ✅ 已落地
+§9 正文引用的「见 #10」仅指一个建议性小改进（在 build 门禁里补一条「client bundle 内联 CssRender」断言），未作为正式发现立项。现已在 `scripts/build-plugins.ts` 落地为常驻门禁 `verifyClientBundleInlineCssRender`：build 后扫描 `dsh-tauri/dist/client.cjs`，禁止外部 `require('css-render')` 残留、并要求存在 CssRender 内联体。`pnpm build:plugins` 全程验证通过（9 插件部署 + 校验）。与既有 `verifyDeployedPackages` + `verifyMaterialized` 合璧，css-render 内联从「一次实证」升级为「每次构建强制」。此为工程 `eae2c18` 提交。
