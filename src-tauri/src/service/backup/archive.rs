@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 创建符号链接（平台差异处理）。
 #[cfg(unix)]
@@ -189,6 +189,22 @@ pub fn extract_archive_gzip(archive: &Path, dest: &Path) -> Result<(), String> {
 /// 从 tar 归档安全解压所有条目到 `dest`（压缩格式无关）。
 ///
 /// 逐个条目：拒绝含 `..` 的路径（防逃逸）、拒绝硬链接、目录直接创建、
+/// 词法归一化路径：按组件展开 `..` 与 `.`，不触碰文件系统。
+/// 用于在 dest 尚未创建时校验链接目标/条目路径的落点是否仍在根内。
+fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 /// 符号链接按 target 创建、普通文件先写临时文件再原子 rename。自定义
 /// 解压（替代 `entry.unpack`）是为了规避 macOS 上的 tar bug。
 fn extract_tar_entries<R: Read>(archive: &mut tar::Archive<R>, dest: &Path) -> Result<(), String> {
@@ -207,6 +223,18 @@ fn extract_tar_entries<R: Read>(archive: &mut tar::Archive<R>, dest: &Path) -> R
         {
             return Err(format!(
                 "BACKUP_EXTRACT_PATH_ESCAPE: entry {:?} contains ..",
+                path
+            ));
+        }
+
+        // 拒绝绝对路径与 Windows 盘符/前缀组件：`Path::join` 遇到绝对分量会整体
+        // 替换 base（dest.join("/etc/passwd") == "/etc/passwd"），放行即越界写。
+        if path
+            .components()
+            .any(|c| matches!(c, std::path::Component::RootDir | std::path::Component::Prefix(_)))
+        {
+            return Err(format!(
+                "BACKUP_EXTRACT_PATH_ESCAPE: entry {:?} is absolute or drive-prefixed",
                 path
             ));
         }
@@ -245,6 +273,43 @@ fn extract_tar_entries<R: Read>(archive: &mut tar::Archive<R>, dest: &Path) -> R
                 .link_name()
                 .map_err(|e| format!("BACKUP_EXTRACT_LINK_NAME: {e} (path={})", path.display()))?
                 .ok_or_else(|| format!("BACKUP_EXTRACT_NO_LINK_NAME: {path:?}"))?;
+            // 符号链接目标必须受控：拒绝绝对目标（链接落点可指向根外任意位置），
+            // 相对目标（含 `..`）经词法归一化后必须仍落在 dest 内。
+            // 备份流程会原样重放源目录里的链接（含根内合法的 `../x`），所以不能一律
+            // 拒绝 `..`，而是以「解析后的实际落点仍在解压根内」为准。
+            if target.is_absolute() {
+                return Err(format!(
+                    "BACKUP_EXTRACT_SYMLINK_TARGET_ESCAPE: entry {:?} has absolute target {:?}",
+                    path, target
+                ));
+            }
+            // 词法归一化（不触碰文件系统，dest 在首次解压时未必存在）：先解析
+            // dest_path 的父目录，再拼接 target，再逐组件展开 `..`，最终必须
+            // 前缀覆盖 dest。dest 与 link parent 都是绝对路径，组件级比较安全。
+            let mut resolved = dest_path.parent().unwrap_or(dest).to_path_buf();
+            for component in target.components() {
+                match component {
+                    std::path::Component::CurDir => {}
+                    std::path::Component::ParentDir => {
+                        resolved.pop();
+                    }
+                    std::path::Component::Normal(part) => resolved.push(part),
+                    // is_absolute() 已拒绝 RootDir/Prefix 开头的目标；此处防御性拒绝
+                    std::path::Component::RootDir | std::path::Component::Prefix(_) => {
+                        return Err(format!(
+                            "BACKUP_EXTRACT_SYMLINK_TARGET_ESCAPE: entry {:?} has unsafe target {:?}",
+                            path, target
+                        ));
+                    }
+                }
+            }
+            let dest_norm = normalize_lexically(dest);
+            if !normalize_lexically(&resolved).starts_with(&dest_norm) {
+                return Err(format!(
+                    "BACKUP_EXTRACT_SYMLINK_TARGET_ESCAPE: entry {:?} resolves outside root: {:?}",
+                    path, resolved
+                ));
+            }
             if let Some(parent) = dest_path.parent() {
                 let _ = fs::create_dir_all(parent);
             }
@@ -478,6 +543,47 @@ mod tests {
         Ok(())
     }
 
+    /// 手工构造 symlink 条目（typeflag '2'，linkname 放 name 字段之后）。
+    fn write_raw_tar_symlink<W: std::io::Write>(
+        writer: &mut W,
+        path: &str,
+        target: &str,
+    ) -> Result<(), String> {
+        let mut header = [0u8; 512];
+        if path.as_bytes().len() > 100 {
+            return Err("path too long".to_string());
+        }
+        header[0..path.as_bytes().len()].copy_from_slice(path.as_bytes());
+        // mode 0777 (octal, 100..108)
+        header[100..108].copy_from_slice(b"0000777\0");
+        // uid/gid 0 (108..124)
+        header[108..124].copy_from_slice(b"0000000\00000000\0");
+        // size 0 (124..136) —— symlink 目标在 linkname 字段，size=0
+        let size_str = format!("{:011o}\0", 0usize);
+        header[124..124 + size_str.len()].copy_from_slice(size_str.as_bytes());
+        // mtime 0 (136..148)
+        header[136..148].copy_from_slice(b"00000000000\0");
+        // typeflag Symlink (156)
+        header[156] = b'2';
+        // linkname (157..257)
+        let target_bytes = target.as_bytes();
+        if target_bytes.len() > 100 {
+            return Err("linkname too long".to_string());
+        }
+        header[157..157 + target_bytes.len()].copy_from_slice(target_bytes);
+        // magic + version (257..265)
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        // checksum (148..156): 先填空格，再算字节和
+        header[148..156].copy_from_slice(b"        ");
+        let checksum: u32 = header.iter().map(|&b| b as u32).sum();
+        let ck_str = format!("{:06o}\0 ", checksum);
+        header[148..148 + ck_str.len()].copy_from_slice(ck_str.as_bytes());
+
+        writer.write_all(&header).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     #[test]
     fn rejects_path_traversal_on_restore() {
         let dir = std::env::temp_dir().join(format!("dsh-backup-traversal-{}", unique_suffix()));
@@ -500,6 +606,85 @@ mod tests {
             !std::path::Path::new("/tmp/dsh-evil-passwd").exists(),
             "恶意文件不应被写入系统目录"
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rejects_absolute_path_entry_on_restore() {
+        let dir = std::env::temp_dir().join(format!("dsh-backup-abs-{}", unique_suffix()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let archive_path = dir.join("evil-abs.tar.zst");
+        let file = fs::File::create(&archive_path).unwrap();
+        let mut enc = zstd::stream::Encoder::new(file, 0).unwrap();
+        // 绝对路径条目：Path::join 遇绝对分量会整体替换解压根
+        write_raw_tar_entry(&mut enc, "/tmp/dsh-evil-absolute", b"evil").unwrap();
+        enc.write_all(&[0u8; 1024]).unwrap();
+        enc.finish().unwrap();
+
+        let dest = dir.join("dest");
+        let result = extract_archive(&archive_path, &dest);
+        assert!(result.is_err(), "绝对路径条目应被拒绝: {result:?}");
+        assert!(
+            !std::path::Path::new("/tmp/dsh-evil-absolute").exists(),
+            "恶意绝对路径文件不应被写入"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rejects_symlink_target_escape_on_restore() {
+        // 绝对 target：链接落点在解压根外，即使条目名本身在根内也应拒绝。
+        let dir = std::env::temp_dir().join(format!("dsh-backup-symlink-abs-{}", unique_suffix()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let archive_path = dir.join("evil-symlink.tar.zst");
+        let file = fs::File::create(&archive_path).unwrap();
+        let mut enc = zstd::stream::Encoder::new(file, 0).unwrap();
+        write_raw_tar_symlink(&mut enc, "inside/link", "/tmp/dsh-evil-symlink-target").unwrap();
+        enc.write_all(&[0u8; 1024]).unwrap();
+        enc.finish().unwrap();
+
+        let dest = dir.join("dest");
+        let result = extract_archive(&archive_path, &dest);
+        assert!(result.is_err(), "绝对 symlink target 应被拒绝: {result:?}");
+
+        // `..` 逃出解根的相对 target 同样拒绝。
+        let archive_path2 = dir.join("evil-symlink2.tar.zst");
+        let file2 = fs::File::create(&archive_path2).unwrap();
+        let mut enc2 = zstd::stream::Encoder::new(file2, 0).unwrap();
+        write_raw_tar_symlink(&mut enc2, "inside/link", "../../../etc/passwd").unwrap();
+        enc2.write_all(&[0u8; 1024]).unwrap();
+        enc2.finish().unwrap();
+
+        let result2 = extract_archive(&archive_path2, &dest);
+        assert!(result2.is_err(), "`..` symlink target 逃逸应被拒绝: {result2:?}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn accepts_in_root_relative_symlink_on_restore() {
+        // 根内相对链接（含一次 `..` 回落）是备份流程会产生的合法数据，不得误拒。
+        let dir = std::env::temp_dir().join(format!("dsh-backup-symlink-ok-{}", unique_suffix()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let archive_path = dir.join("ok-symlink.tar.zst");
+        let file = fs::File::create(&archive_path).unwrap();
+        let mut enc = zstd::stream::Encoder::new(file, 0).unwrap();
+        write_raw_tar_symlink(&mut enc, "subdir/link", "../target.txt").unwrap();
+        write_raw_tar_entry(&mut enc, "target.txt", b"data").unwrap();
+        enc.write_all(&[0u8; 1024]).unwrap();
+        enc.finish().unwrap();
+
+        let dest = dir.join("dest");
+        extract_archive(&archive_path, &dest)
+            .unwrap_or_else(|e| panic!("根内 symlink 应放行: {e}"));
+        assert!(dest.join("subdir").join("link").is_symlink(), "根内链接应被创建");
+
         let _ = fs::remove_dir_all(&dir);
     }
 

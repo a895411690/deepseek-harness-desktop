@@ -261,23 +261,28 @@ fn is_duplicate_loader_exit(exit_code: u32, stderr: &str) -> bool {
 pub async fn launch(app_handle: tauri::AppHandle) -> Result<(), String> {
     let mut setting = config::get_store_dat_setting(&app_handle);
     let node_binary_path = config::get_node_binary_path(&app_handle);
-    // 活动核心的 dsh 入口（本地核心优先，未检测到走预打包）
-    let dsh_binary_path = crate::service::core::active_dsh_binary(&app_handle);
 
     log::debug!("Checking Node.js path: {:?}", node_binary_path);
     if !node_binary_path.exists() {
         log::error!("Node.js not installed");
         return Err("NODE_NOT_FOUND: Node.js not installed".to_string());
     }
+
+    // 从这里开始持有与核心切换共用的互斥锁：最终状态检查、启动守卫、残留清扫
+    // 及新进程登记必须处于同一临界区，避免切换在检查后插入。
+    let _transition_guard = super::process::acquire_core_transition().await?;
+
+    // 活动核心的 dsh 入口（本地核心优先，未检测到走预打包）。
+    // 必须在获取过渡锁之后解析：核心切换（dependencies/dsh 目录交换）与 launch
+    // 共用同一把锁，若在锁前解析，切换可能在我们 `exists()` 检查与 spawn 之间
+    // 穿插，导致按旧路径/旧版本决策、按新路径执行的窗口误判。
+    let dsh_binary_path = crate::service::core::active_dsh_binary(&app_handle);
+
     log::debug!("Checking Harness path: {:?}", dsh_binary_path);
     if !dsh_binary_path.exists() {
         log::error!("Harness not installed");
         return Err("HARNESS_NOT_FOUND: Harness not installed".to_string());
     }
-
-    // 从这里开始持有与核心切换共用的互斥锁：最终状态检查、启动守卫、残留清扫
-    // 及新进程登记必须处于同一临界区，避免切换在检查后插入。
-    let _transition_guard = super::process::acquire_core_transition().await?;
 
     // 避免重复启动（配合启动守卫，确保并发调用只拉起一个进程）
     if has_owned_process() {

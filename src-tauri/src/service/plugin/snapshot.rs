@@ -33,7 +33,7 @@ use crate::service::fs_guard;
 
 use super::installed::{is_installed, profile_dir};
 use super::process::acquire_operation_lock;
-use super::recovery::is_actionable_plugin_ref;
+use super::recovery::{is_actionable_plugin_ref, is_package_name};
 
 /// 快照目录名（`$DSH_HOME/.plugin-backups`）。
 const SNAPSHOT_DIR_NAME: &str = ".plugin-backups";
@@ -108,9 +108,16 @@ fn snapshot_dir(app_handle: &AppHandle) -> PathBuf {
 /// 生成快照文件名：插件 id 可能含 `/`（scoped 包）与 `@`，`validate_id` 不认可，
 /// 先替换为 `_` 再走字符集白名单校验，杜绝 `..` / 分隔符等穿越形态。
 ///
+/// 前置要求 id 是合法 npm 包名（`is_package_name`）：把 `foo` 与非 scoped 的
+/// `a/b`、`../x` 等脏形态区分开，使「同名碰撞」只可能发生在两个合法包名净化后
+/// 完全相同的罕见情形，而不是任意字符串都可进来撞击同一文件名。
+///
 /// 文件名不参与回读（读取靠内嵌 manifest），同名冲突仅在两个 id 净化后完全相同时
 /// 发生，实际 npm 包名几乎不可能，属可接受的覆盖语义。
 fn snapshot_filename(id: &str) -> Result<String, String> {
+    if !is_package_name(id) {
+        return Err(format!("SNAPSHOT_INVALID_PACKAGE: {id} 不是合法的 npm 包名"));
+    }
     if id.trim().is_empty() {
         return Err("SNAPSHOT_INVALID_ID: 插件 id 为空".to_string());
     }
@@ -157,7 +164,16 @@ fn now_timestamp() -> String {
 /// - 非 pnpm 布局：`node_modules/<id>` 即真实目录。
 ///
 /// 快照归档真实目录内容，避免把符号链接本身当内容。
+///
+/// 入口先做包名合法性校验（与还原流的 `is_actionable_plugin_ref` 范围对齐的
+/// 前置）：`id` 用于 `node_modules.join`，必须是合法 npm 包名，杜绝
+/// `../` / 绝对路径 / 多段分隔符等穿越形态在创建快照时进入路径。
 fn resolve_real_target(node_modules: &Path, id: &str) -> Result<PathBuf, String> {
+    if !is_package_name(id) {
+        return Err(format!(
+            "SNAPSHOT_INVALID_PACKAGE: {id} 不是合法的 npm 包名"
+        ));
+    }
     let entry = node_modules.join(id);
     if !entry.exists() {
         return Err(format!(
@@ -717,7 +733,23 @@ mod tests {
         assert!(snapshot_filename("..").is_err());
         assert!(snapshot_filename("").is_err());
         assert!(snapshot_filename("../x").is_err());
-        assert!(snapshot_filename("a/b").is_ok()); // 净化后合法
+        // 非 scoped 形式带 `/`（`a/b`）不是合法 npm 包名，现被包名校验拒绝
+        // （此前净化后会被当成 `a_b` 收下，属范围外的脏输入）。
+        assert!(snapshot_filename("a/b").is_err());
+        assert!(snapshot_filename("/etc/passwd").is_err());
+        assert!(snapshot_filename("a\\..\\b").is_err());
+    }
+
+    #[test]
+    fn resolve_real_target_rejects_invalid_package_name() {
+        let dir = std::env::temp_dir().join(format!("dsh-snap-tgt-invalid-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir.join("node_modules")).unwrap();
+        // 合法包名不存在 → NOT_INSTALLED；非法包名在拼路径前直接被拒
+        assert!(resolve_real_target(&dir.join("node_modules"), "../x").is_err());
+        assert!(resolve_real_target(&dir.join("node_modules"), "a/b").is_err());
+        assert!(resolve_real_target(&dir.join("node_modules"), "/etc/passwd").is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

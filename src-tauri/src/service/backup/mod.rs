@@ -44,18 +44,18 @@ pub enum RestoreMode {
 
 /// 备份清单（索引文件 `.manifest.json` 的内容）。
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
-struct BackupManifest {
-    backups: Vec<ManifestEntry>,
+pub(crate) struct BackupManifest {
+    pub(crate) backups: Vec<ManifestEntry>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ManifestEntry {
-    timestamp: String,
-    profile: String,
-    path: String,
-    size: u64,
-    include_credentials: bool,
+pub(crate) struct ManifestEntry {
+    pub(crate) timestamp: String,
+    pub(crate) profile: String,
+    pub(crate) path: String,
+    pub(crate) size: u64,
+    pub(crate) include_credentials: bool,
 }
 
 /// 获取备份目录（`$DSH_HOME/.backups/`），不存在时自动创建。
@@ -75,12 +75,16 @@ fn archive_filename(profile: &str, timestamp: &str) -> String {
 enum ManifestError {
     /// 清单文件存在但无法解析（损坏），已另存为 .corrupt 以便人工恢复。
     ParseError(String),
+    /// 清单文件存在但读取失败（权限 / IO 等）。与「不存在」严格区分：
+    /// 不能让「读不到」被当成「空清单」，否则后续写入会用空清单覆盖成立的文件。
+    ReadError(String),
 }
 
 impl std::fmt::Display for ManifestError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ManifestError::ParseError(e) => write!(f, "manifest parse error: {e}"),
+            ManifestError::ReadError(e) => write!(f, "manifest read error: {e}"),
         }
     }
 }
@@ -92,12 +96,17 @@ impl std::error::Error for ManifestError {}
 /// - 清单不存在 → 返回空（首次备份的合法空状态）。
 /// - 清单存在但损坏 → 另存为 `.corrupt` 以便人工恢复，并返回错误，避免
 ///   `create_backup` / `delete_backup` 用空清单覆盖导致既有索引丢失。
-fn read_manifest(backup_dir: &Path) -> Result<BackupManifest, ManifestError> {
+/// - 清单存在但读取失败（权限 / IO）→ 返回错误（同样拒绝空清单回滚）。
+pub(crate) fn read_manifest(backup_dir: &Path) -> Result<BackupManifest, ManifestError> {
     let path = backup_dir.join(".manifest.json");
     let content = match fs::read_to_string(&path) {
         Ok(c) => c,
-        // 清单不存在 → 首次备份的合法空状态，返回空清单
-        Err(_) => return Ok(BackupManifest { backups: vec![] }),
+        // 只有「文件确实不存在」才是首次备份的合法空状态
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(BackupManifest { backups: vec![] });
+        }
+        // 存在但读不出来（权限 / IO 等）：中止，绝不返回空清单
+        Err(e) => return Err(ManifestError::ReadError(e.to_string())),
     };
     if content.trim().is_empty() {
         return Err(ManifestError::ParseError("empty manifest".into()));
@@ -113,7 +122,7 @@ fn read_manifest(backup_dir: &Path) -> Result<BackupManifest, ManifestError> {
 }
 
 /// 原子写入备份清单（唯一临时文件名，避免并发写入覆盖）。
-fn write_manifest(backup_dir: &Path, manifest: &BackupManifest) -> Result<(), String> {
+pub(crate) fn write_manifest(backup_dir: &Path, manifest: &BackupManifest) -> Result<(), String> {
     let path = backup_dir.join(".manifest.json");
     // 唯一临时文件名：PID + 纳秒时间戳，并发写入互不覆盖
     let tmp_name = format!(".manifest.{}.{}.tmp", std::process::id(), timestamp_nanos());
@@ -412,6 +421,29 @@ mod tests {
         assert_eq!(read.backups.len(), 1);
         assert_eq!(read.backups[0].timestamp, "2026-08-30T12-00-00");
         assert_eq!(read.backups[0].size, 100);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 清单读取失败（存在但不可读，如 `.manifest.json` 是目录）必须返回错误，
+    /// 而不是被当成「空清单」——否则后续写入会用空清单覆盖成立的文件。
+    #[test]
+    fn read_manifest_read_error_is_not_empty() {
+        let dir = std::env::temp_dir().join(format!(
+            "dsh-backup-manifest-readerr-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // 用目录占位 `.manifest.json`：read_to_string 会得到 IsADirectory 错误
+        fs::create_dir_all(dir.join(".manifest.json")).unwrap();
+
+        let result = read_manifest(&dir);
+        assert!(
+            matches!(result, Err(ManifestError::ReadError(_))),
+            "不可读清单应报 ReadError，而非被吞成空清单: {result:?}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }

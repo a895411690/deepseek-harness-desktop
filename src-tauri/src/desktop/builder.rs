@@ -492,12 +492,15 @@ mod tests {
 #[cfg(test)]
 mod security_tests {
     #[test]
-    fn remote_capability_allows_only_loopback_harness() {
+    fn capability_grants_no_remote_urls() {
         let capability = include_str!("../../capabilities/default.json");
-        assert!(capability.contains("\"remote\""));
+        // 安全边界：嵌入的远程 Harness GUI（127.0.0.1 上的 iframe）不获得任何
+        // native Tauri 权限——它没有 __TAURI_INTERNALS__，只通过受校验的
+        // postMessage 桥与 shell 通信。存在 remote 通配即失守。
+        assert!(!capability.contains("\"remote\""));
         let wildcard_loopback = ["http://127.0.0.1:", "*"].concat();
-        assert!(capability.contains(wildcard_loopback.as_str()));
-        assert!(!capability.contains("https://"));
+        assert!(!capability.contains(wildcard_loopback.as_str()));
+        assert!(!capability.contains("https://" as &str));
     }
 
     #[test]
