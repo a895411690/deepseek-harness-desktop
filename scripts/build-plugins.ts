@@ -111,6 +111,25 @@ function verifyDeployedPackages(names: readonly string[], nodeModulesRoot: strin
   }
 }
 
+/**
+ * 断言桌面壳 client 产物已内联 css-render（而非残留外部 require）。
+ *
+ * dsh-tauri 的 `css-render` 属 devDependencies（tsdown 默认只 externalize
+ * dependencies），因此会被打进 `dist/client.cjs`。历史上该内联一旦失效，产物
+ * 会在运行时以 `require('css-render')` 抛加载失败（REVIEW-031a946 §9 实证）。
+ * 这里在构建后扫描一遍，把这条「只为显式内联而存在」的约定从实证升级为门禁。
+ */
+function verifyClientBundleInlineCssRender(clientCjs: string): void {
+  const source = readFileSync(clientCjs, 'utf8')
+  const external = /require\(["']css-render["']\)/.test(source)
+  if (external) {
+    throw new Error(`PLUGIN_DEPLOY_CSS_RENDER_NOT_INLINED: ${clientCjs} 残留 require('css-render')，发布后运行时将无法解析`)
+  }
+  if (!source.includes('CssRender')) {
+    throw new Error(`PLUGIN_DEPLOY_CSS_RENDER_MISSING: ${clientCjs} 未找到 CssRender 内联体`)
+  }
+}
+
 function main(): void {
   const names = bundledPackageNames()
   // 先生成最新 dist，再打包 production 闭包。部署到独立临时目录并校验通过后，
@@ -127,6 +146,16 @@ function main(): void {
     'run',
     'build',
   ])
+
+  // 桌面壳 client 产物必须内联 css-render（devDependency，tsdown 打进 bundle；
+  // 残留 require 会导致运行期加载失败）——这里把它固定为构建门禁。
+  const dshClientCjs = join(PACKAGES_ROOT, 'dsh-tauri', 'dist', 'client.cjs')
+  if (existsSync(dshClientCjs)) {
+    verifyClientBundleInlineCssRender(dshClientCjs)
+  }
+  else {
+    throw new Error(`PLUGIN_DEPLOY_CSS_RENDER_MISSING: 未找到 ${dshClientCjs}`)
+  }
 
   // pnpm v10 的 deploy 默认命中「legacy」算法：把产物链接到全局共享存储，导致部署出
   // 来的 node_modules 混入整个 workspace 的生产依赖（桌面壳的 React/UI 栈全部冗余）。
