@@ -88,6 +88,29 @@ function verifyMaterialized(root: string): void {
   }
 }
 
+/**
+ * 校验每个内置插件都已物化进部署产物：package.json 存在、`dsh` 元数据健全、
+ * `main` 入口可解析。pnpm deploy 对空依赖闭包仍会 exit 0，因此缺包只能在这里被拦下。
+ */
+function verifyDeployedPackages(names: readonly string[], nodeModulesRoot: string): void {
+  for (const name of names) {
+    const packageJson = join(nodeModulesRoot, name, 'package.json')
+    if (!existsSync(packageJson)) {
+      throw new Error(`PLUGIN_DEPLOY_MISSING: ${packageJson}`)
+    }
+    const manifest = JSON.parse(readFileSync(packageJson, 'utf8')) as {
+      main?: unknown
+      dsh?: unknown
+    }
+    if (typeof manifest.dsh !== 'object' || manifest.dsh === null || Array.isArray(manifest.dsh)) {
+      throw new Error(`PLUGIN_DEPLOY_INVALID_DSH: ${packageJson}`)
+    }
+    if (typeof manifest.main === 'string' && !existsSync(join(nodeModulesRoot, name, manifest.main))) {
+      throw new Error(`PLUGIN_DEPLOY_MISSING_ENTRY: ${join(nodeModulesRoot, name, manifest.main)}`)
+    }
+  }
+}
+
 function main(): void {
   const names = bundledPackageNames()
   // 先生成最新 dist，再打包 production 闭包。部署到独立临时目录并校验通过后，
@@ -136,6 +159,7 @@ function main(): void {
     }
     materializeTree(deployed, DEPLOYED_NODE_MODULES)
     verifyMaterialized(DEPLOYED_NODE_MODULES)
+    verifyDeployedPackages(names, DEPLOYED_NODE_MODULES)
     console.log(`[build:plugins] deployed ${names.length} plugins to ${RESOURCE_ROOT}`)
   }
   catch (error) {
