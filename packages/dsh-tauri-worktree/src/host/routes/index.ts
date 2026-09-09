@@ -17,7 +17,17 @@ import { gitToplevel } from '../service/git.js'
 import { checkoutToLocalAndHandback, inheritSessionIntoWorktree } from '../service/handoff.js'
 import { discardWorktree, ensureWorktree, worktreeKey, worktreePath } from '../service/operation.js'
 import { findSession, resolveProjectPath } from '../service/session.js'
-import { loadBinding } from '../storage/index.js'
+import { loadBinding, assertSafeSessionId } from '../storage/index.js'
+
+/** 路由层统一校验 sessionId 合法性；非法返回 400，合法返回原值。 */
+function safeSessionIdOr400(sessionId: string): string | [400, { error: string }] {
+  try {
+    return assertSafeSessionId(sessionId)
+  }
+  catch {
+    return [400, { error: 'sessionId 含非法字符（仅允许字母、数字、- _ .）' }]
+  }
+}
 
 /** 构建路由列表。 */
 interface DiscardJob {
@@ -140,11 +150,14 @@ export function buildRoutes(ctx: HostContext, config: PluginConfig): any[] {
         const sourceSessionId = String(body.sourceSessionId ?? sessionId)
         if (!sessionId)
           return [400, { error: '缺少 sessionId' }]
+        const safeSessionId = safeSessionIdOr400(sessionId)
+        if (Array.isArray(safeSessionId))
+          return safeSessionId
         const sourceSession = findSession(ctx, sourceSessionId)
         const projectPath = await resolveProjectPath(ctx, sourceSession)
         if (!projectPath)
           return [400, { error: '无法解析会话工作目录：会话尚未就绪，请稍后重试' }]
-        const r = await ensureWorktree(ctx, worktreesRoot, projectPath, sessionId, {
+        const r = await ensureWorktree(ctx, worktreesRoot, projectPath, safeSessionId, {
           sourceSessionId,
           carryStaged: body.carryStaged === true,
         })
@@ -185,7 +198,10 @@ export function buildRoutes(ctx: HostContext, config: PluginConfig): any[] {
         const sessionId = String(body.sessionId ?? '')
         if (!sessionId)
           return [400, { error: '缺少 sessionId' }]
-        const binding = await loadBinding(worktreesRoot, sessionId)
+        const safeSessionId = safeSessionIdOr400(sessionId)
+        if (Array.isArray(safeSessionId))
+          return safeSessionId
+        const binding = await loadBinding(worktreesRoot, safeSessionId)
         if (!binding)
           return [404, { error: '未找到绑定的工作树' }]
         const workspace = await ctx.workspaceRegistry.resolveByPath(binding.projectPath)

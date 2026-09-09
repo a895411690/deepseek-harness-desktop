@@ -31,13 +31,33 @@ function store(worktreesRoot: string) {
   return createAtomicFsStorage(worktreesRoot)
 }
 
+/**
+ * 校验并按白名单规范化会话 id，杜绝路径穿越。
+ *
+ * 会话 id 会直接拼进 `ledger/<sessionId>.json` 等路径（见 sessionFile），而宿主
+ * 的 fs driver 只做 `join`，不拦截 `..` / `/`。这里与 dsh-tauri-session 的
+ * `encodeSessionId` 合法字符集保持一致：只允许 `[\w.-]`，拒绝目录分隔符、
+ * `.` / `..` 特例及空串。非法 id 抛错（写路径由调用方上报；读路径在 try 内）。
+ */
+export function assertSafeSessionId(sessionId: string): string {
+  if (
+    sessionId === ''
+    || sessionId === '.'
+    || sessionId === '..'
+    || !/^[\w.-]+$/.test(sessionId)
+  ) {
+    throw new Error(`invalid session id: ${JSON.stringify(sessionId)}`)
+  }
+  return sessionId
+}
+
 /** 会话 id → 按会话文件的相对路径（不含 base）。 */
 function sessionFile(sessionId: string): string {
-  return `${LEDGER_DIR}/${sessionId}.json`
+  return `${LEDGER_DIR}/${assertSafeSessionId(sessionId)}.json`
 }
 
 function checkoutContextFile(sessionId: string): string {
-  return `${CHECKOUT_CONTEXT_DIR}/${sessionId}.json`
+  return `${CHECKOUT_CONTEXT_DIR}/${assertSafeSessionId(sessionId)}.json`
 }
 
 /** 解析单个对象；文件缺失或内容损坏返回 null。 */

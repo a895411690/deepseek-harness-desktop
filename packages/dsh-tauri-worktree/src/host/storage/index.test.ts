@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'pathe'
 import { describe, expect, it } from 'vitest'
 import {
+  assertSafeSessionId,
   listBindings,
   listBindingsSync,
   loadBinding,
@@ -113,5 +114,42 @@ describe('按会话分文件的 binding ledger', () => {
     await expect(loadBinding(root, 'any')).resolves.toBeNull()
     expect(listBindingsSync(root)).toEqual([])
     expect(existsSync(join(root, 'ledger.json'))).toBe(false)
+  })
+})
+
+describe('assertSafeSessionId（路径穿越防护）', () => {
+  it('放行合法会话 id（字母数字、连字符、下划线、点）', () => {
+    for (const ok of ['session-1', 'session_a.2', 'a.b-c_d', 'session'])
+      expect(assertSafeSessionId(ok)).toBe(ok)
+  })
+
+  it('拒绝目录分隔符与遍历序列', () => {
+    const bad = [
+      '../evil', '..', '.', '',
+      'a/b', '..\\..', 'a\\b',
+      '/etc/passwd', 'C:/x',
+      'a:b', 'a b',
+    ]
+    for (const id of bad)
+      expect(() => assertSafeSessionId(id), `should reject ${JSON.stringify(id)}`).toThrow()
+  })
+
+  it('saveBinding/loadBinding/removeBinding 遇非法 id 不落盘读外（只读路径静默返回 null）', async () => {
+    const root = tempRoot()
+    const binding = makeBinding('session-1')
+    for (const id of ['../..', 'a/b', '..']) {
+      await expect(saveBinding(root, id, binding)).rejects.toThrow()
+      await expect(removeBinding(root, id)).rejects.toThrow()
+      // 只读路径按“绝不抛错”契约返回 null，且不得读取外部文件。
+      await expect(loadBinding(root, id)).resolves.toBeNull()
+      await expect(loadBindingSync(root, id)).toBeNull()
+    }
+    // 根目录下不得产生穿越残留文件。
+    const ledgerDir = join(root, 'ledger')
+    if (existsSync(ledgerDir)) {
+      const names = readdirSync(ledgerDir)
+      for (const name of names)
+        expect(name.includes('..')).toBe(false)
+    }
   })
 })
