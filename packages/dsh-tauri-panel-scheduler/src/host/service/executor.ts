@@ -168,17 +168,16 @@ export async function loadSchedulerRuntimeModules(loader: PlatformModuleLoader):
 
 /** 对不保证及时响应 AbortSignal 的宿主任务设置第二道退出上限（对齐 MichengAI）。 */
 export function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return Promise.race([
-      promise.then(() => true, () => false),
-      new Promise<false>((resolve) => { timer = setTimeout(resolve, timeoutMs, false) }),
-    ])
-  }
-  finally {
-    if (timer !== undefined)
-      clearTimeout(timer)
-  }
+  // 注意：不能把 clearTimeout 放在同步 finally 里——`Promise.race` 构造完成后
+  // finally 会立刻执行，计时器在第一次 tick 前就被清除，超时分支永远不触发。
+  // 这里用显式 timer：先到者定胜负，promise 先到则清 timer；timer 先到则返回 false。
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs)
+    promise.then(
+      () => { clearTimeout(timer); resolve(true) },
+      () => { clearTimeout(timer); resolve(false) },
+    )
+  })
 }
 
 /** 无人值守工具白名单拦截（对齐 MichengAI unattendedToolGuardReason）。 */

@@ -19,6 +19,12 @@ declare module '@deepseek-ai/cordis' {
     readonly llm?: any
     readonly systemPrompt?: { section: (input: { name: string, order: number, text: string }) => () => void }
     readonly logger: { warn: (message: string) => void }
+    /** 反射层（宿主注入），用于跨插件协议存取（如调度器面板 panel.protocol）。 */
+    readonly reflect: {
+      get: (name: string) => unknown
+      set: (name: string, value: unknown) => void
+      provide: (name: string, value: unknown, checker?: unknown) => void
+    }
     effect: <T>(factory: () => T | Promise<T>, label?: string) => T
     on: (name: string, listener: (...args: any[]) => any) => () => void
     get: (name: string) => unknown
@@ -47,14 +53,11 @@ declare module '@deepseek-ai/dsh-agent-presets' {}
 declare module '@deepseek-ai/dsh-permission-presets' {}
 declare module '@deepseek-ai/dsh-client-connection' {}
 
-declare module '@deepseek-ai/dsh-client-ui-primitives' {
-  import type { ReactNode } from 'react'
-
-  export function Toast(props: { text: string, icon?: ReactNode, anchor?: HTMLElement | null, onDone: () => void }): JSX.Element
-  export function Menu(props: { open: boolean, onClose: () => void, items: readonly any[], onSelect: (id: string) => void, selectedId?: string, portal?: boolean, align?: string, side?: string, anchor: ReactNode }): JSX.Element
-  export function Modal(props: any): JSX.Element
-  export function IconWarningOutline16(): JSX.Element
-}
+// 注意：@deepseek-ai/dsh-client-ui-primitives 不再在此遮蔽 —— 之前只声明
+// Toast/Menu/Modal/IconWarningOutline16 子集，会把 MenuEntry、IconChevronDownOutline14、
+// IconCheckOutline16 等大量真实导出「遮蔽」掉，导致 tsc 报 no exported member。
+// 该包已发布完整 d.ts（lib/types/*.d.ts），各组件直接按官方声明校验即可
+// （与 dsh-tauri-session / dsh-tauri-panel-extension 行为一致）。
 
 declare module '@deepseek-ai/dsh-llm' {
   export function createUserMessage(value: {

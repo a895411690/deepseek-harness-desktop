@@ -58,7 +58,7 @@ function toCronExpression(schedule: TimeSchedule): string | undefined {
     case 'weekly': {
       const days: number[] = []
       for (const day of schedule.weekdays) {
-        if (!Object.hasOwn(WEEKDAY_TO_CRON_DAY, day))
+        if (!Object.prototype.hasOwnProperty.call(WEEKDAY_TO_CRON_DAY, day))
           return undefined
         days.push(WEEKDAY_TO_CRON_DAY[day])
       }
@@ -111,7 +111,7 @@ export function validateSchedule(schedule: unknown): schedule is SchedulerSchedu
       && parseTimeToMinutes(value.time) !== undefined
       && Array.isArray(value.weekdays)
       && (value.weekdays as Weekday[]).length > 0
-      && (value.weekdays as Weekday[]).every(day => Object.hasOwn(WEEKDAY_TO_CRON_DAY, day))
+      && (value.weekdays as Weekday[]).every(day => Object.prototype.hasOwnProperty.call(WEEKDAY_TO_CRON_DAY, day))
   }
   return false
 }

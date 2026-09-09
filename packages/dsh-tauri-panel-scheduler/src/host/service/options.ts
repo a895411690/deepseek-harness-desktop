@@ -21,8 +21,8 @@ async function collectWorkspaces(ctx: HostContext): Promise<SchedulerOptions['wo
     if (!Array.isArray(records))
       return []
     return records
-      .filter((record: unknown): record is { id?: unknown, path?: unknown, title?: unknown } =>
-        typeof record === 'object' && record !== null && typeof record.id === 'string')
+      .filter((record: unknown): record is { id: string, path?: unknown, title?: unknown } =>
+        typeof record === 'object' && record !== null && typeof (record as { id?: unknown }).id === 'string')
       .map(record => ({
         id: record.id,
         path: typeof record.path === 'string' ? record.path : record.id,
@@ -49,7 +49,7 @@ function collectPermissions(ctx: HostContext): { permissions: PermissionOption[]
     const names = Array.isArray(presets?.names) ? presets.names : []
     if (names.length === 0)
       return { permissions: [], defaultPermission: 'read-only' }
-    const permissions = names.map(name => presets.optionOf?.(name) ?? { value: name, name })
+    const permissions = names.map(name => presets?.optionOf?.(name) ?? { value: name, name })
     const defaultPermission = typeof presets?.defaultPreset === 'string' && presets.defaultPreset
       ? presets.defaultPreset
       : (names[0] ?? 'read-only')
@@ -131,7 +131,7 @@ async function collectModels(ctx: HostContext): Promise<{ models: ModelOption[],
         })
       }
     }
-    const defaultModel = current === null
+    const defaultModel = current === null || current === undefined
       ? (found[0] ?? null)
       : (found.find(item => item.provider === current.provider && item.model === current.model) ?? found[0] ?? null)
     return { models: found, failures, defaultModel }

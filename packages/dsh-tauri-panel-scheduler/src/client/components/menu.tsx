@@ -7,7 +7,7 @@
  * 状态修饰符（is-open / is-up / is-end / is-float / is-kv / is-on）保留字面量。
  */
 
-import type { CSSProperties, ReactNode, RefObject } from 'react'
+import type { CSSProperties, JSX, ReactNode, RefObject } from 'react'
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { SCHEDULER_CLASSES as K } from '../constants'
@@ -23,8 +23,8 @@ const MenuHostContext = createContext<HTMLElement | null>(null)
 function useMenuOpen(): {
   readonly open: boolean
   readonly setOpen: (value: boolean | ((current: boolean) => boolean)) => void
-  readonly root: React.RefObject<HTMLDivElement>
-  readonly menu: React.RefObject<HTMLDivElement>
+  readonly root: React.RefObject<HTMLDivElement | null>
+  readonly menu: React.RefObject<HTMLDivElement | null>
 } {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -76,8 +76,8 @@ export function MenuPopup({
   onClick,
 }: {
   readonly open: boolean
-  readonly anchor: RefObject<HTMLElement>
-  readonly menuRef: RefObject<HTMLDivElement>
+  readonly anchor: RefObject<HTMLElement | null>
+  readonly menuRef: RefObject<HTMLDivElement | null>
   readonly up?: boolean | undefined
   readonly end?: boolean | undefined
   readonly className: string

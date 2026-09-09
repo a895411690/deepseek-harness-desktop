@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { loadSchedulerRuntimeModules, unattendedToolGuardReason } from './executor.js'
+import { loadSchedulerRuntimeModules, settlesWithin, unattendedToolGuardReason } from './executor.js'
 
 describe('loadSchedulerRuntimeModules', () => {
   it('resolves DSH-owned modules through the platform loader', async () => {
@@ -97,5 +97,51 @@ describe('unattendedToolGuardReason', () => {
     expect(unattendedToolGuardReason('pwsh', { command: 'ls', run_in_background: true }))
       .toBe('无人值守运行不允许启动后台进程。')
     expect(unattendedToolGuardReason('bash', { command: 'ls' })).toBeUndefined()
+  })
+})
+
+describe('settlesWithin', () => {
+  it('resolves true when the promise settles before the timeout', async () => {
+    const result = await settlesWithin(Promise.resolve('done'), 500)
+    expect(result).toBe(true)
+  })
+
+  it('resolves false when the promise settles with a rejection before the timeout', async () => {
+    const result = await settlesWithin(Promise.reject(new Error('boom')), 500)
+    expect(result).toBe(false)
+  })
+
+  it('resolves false when the promise does not settle within the timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const pending = new Promise<void>(() => {})
+      const resultPromise = settlesWithin(pending, 50)
+      const asserted = resultPromise.then(
+        (value) => { expect(value).toBe(false); return true },
+        () => false,
+      )
+      await vi.advanceTimersByTimeAsync(50)
+      expect(await asserted).toBe(true)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resolves before the timeout when the promise settles quickly', async () => {
+    vi.useFakeTimers()
+    try {
+      let settle!: (value: string) => void
+      const pending = new Promise<string>((resolve) => { settle = resolve })
+      const resultPromise = settlesWithin(pending, 10_000)
+      settle('early')
+      const value = await resultPromise
+      expect(value).toBe(true)
+      // 计时器不应还挂着（已清除）
+      expect(vi.getTimerCount()).toBe(0)
+    }
+    finally {
+      vi.useRealTimers()
+    }
   })
 })

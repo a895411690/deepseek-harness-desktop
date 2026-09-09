@@ -7,6 +7,7 @@
  */
 
 import type { ModelCatalogFailure, ModelOption, ModelTranslate } from '../types'
+import type { JSX } from 'react'
 import { IconCheckOutline16, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useEffect, useState } from 'react'
 import { SCHEDULER_CLASSES as K } from '../constants'
