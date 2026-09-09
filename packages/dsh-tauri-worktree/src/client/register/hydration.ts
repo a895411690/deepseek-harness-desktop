@@ -15,10 +15,11 @@ import type { ClientContext } from 'dsh-tauri/client'
 import type { SessionListSnapshot, WorkspaceListSnapshot, WorktreeHydrationSessionsRuntime } from '../types'
 import { createLifecycleController } from 'dsh-tauri/client'
 import { DISCARD_MAX_POLLS, DISCARD_POLL_DELAY_MS, HANDOFF_WINDOW_MS, HYDRATION_MAX_RETRIES, HYDRATION_RETRY_DELAY_MS } from '../constants'
+import { attachWorktreeSession, discardWorktree, fetchStatus } from '../service/actions'
 import { openWorktreeSession } from '../service/handoff'
-import { attachWorktreeSession, discardWorktree, fetchStatus, patchSession, selectSessionState, worktreeStore } from '../store'
+import { patchSession, selectSessionState, worktreeStore } from '../store'
 
-export function installWorktreeHydration(ctx: ClientContext): () => void {
+export function registerWorktreeHydration(ctx: ClientContext): () => void {
   // HARDCODE: SessionRuntime.binding() is an internal DSH 0.1.1-rc.2 API.
   // The public session-list source does not emit every tool-event mutation, so
   // live checkout/discard reconciliation subscribes to the bound Session source.

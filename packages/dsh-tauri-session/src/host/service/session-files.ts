@@ -8,9 +8,16 @@
  *   - 物理删除是 best-effort（找不到就跳过），但抛出异常时必须由调用方中止流程。
  */
 
-import type { HostContext, SessionLike } from '../types/index.js'
+import type { HostContext, SessionLike } from '../types'
 import { readdirSync, rmSync } from 'node:fs'
+import { homedir } from 'node:os'
+import process from 'node:process'
 import { dirname, join, resolve, sep } from 'pathe'
+
+/** 会话数据根目录（默认 `$DSH_HOME/sessions`；测试可注入临时根）。 */
+function sessionsRoot(dshHome: string | undefined): string {
+  return join(dshHome ?? process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'sessions')
+}
 
 /** 查找会话对象（host ctx.sessions）。 */
 export function findSession(ctx: HostContext, sessionId: string): SessionLike | undefined {
@@ -78,13 +85,13 @@ export function encodeSessionId(id: string): string {
  * 会从持久化重建会话索引，该会话从工作区/归档中彻底消失。
  * @returns 是否实际删除了目录。
  */
-export function removeSessionDataDir(dshHome: string, sessionId: string): boolean {
-  const sessionsRoot = join(dshHome, 'sessions')
-  const dir = findSessionDataDir(sessionsRoot, sessionId)
+export function removeSessionDataDir(sessionId: string, dshHome?: string): boolean {
+  const sessionsRootDir = sessionsRoot(dshHome)
+  const dir = findSessionDataDir(sessionsRootDir, sessionId)
   if (!dir)
     return false
   rmSync(dir, { recursive: true, force: true })
-  pruneEmptyParents(sessionsRoot, dirname(dir))
+  pruneEmptyParents(sessionsRootDir, dirname(dir))
   return true
 }
 
@@ -104,8 +111,8 @@ function pruneEmptyParents(sessionsRoot: string, parent: string): void {
  * 供「打开会话目录」解析目标路径使用。
  * @returns 会话数据目录绝对路径；未找到返回 undefined。
  */
-export function locateSessionDataDir(dshHome: string, sessionId: string): string | undefined {
-  return findSessionDataDir(join(dshHome, 'sessions'), sessionId)
+export function locateSessionDataDir(sessionId: string, dshHome?: string): string | undefined {
+  return findSessionDataDir(sessionsRoot(dshHome), sessionId)
 }
 
 /** 有界扫描（深度 2）查找会话数据目录，返回首个命中（含一级/二级布局）。 */

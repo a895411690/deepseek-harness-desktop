@@ -1,13 +1,9 @@
 /** types/archive.ts — 归档页领域类型（载荷 / 行 / 排序 / UI 状态 / 组件 props）。 */
 
+import type { ArchivedListPayload } from '../apis/index.type'
 import type { SessionsRuntimeLike, WorkspacesRuntimeLike } from './runtime'
 
-/** Raw archive listing from the host (`GET /api/dsh-session/archived`). */
-export interface ArchivedListPayload {
-  archivedSessionIds: string[]
-  /** Per archived session, creation metadata read from the host session header. */
-  meta: Record<string, { createdAt?: number, cwd?: string, title?: string }>
-}
+export type { ArchivedListPayload }
 
 /** One archived session row after merging host metadata + session/workspace runtime facts. */
 export interface ArchiveRow {

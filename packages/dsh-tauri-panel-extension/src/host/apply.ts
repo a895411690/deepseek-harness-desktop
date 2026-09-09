@@ -11,17 +11,17 @@
  * providerHooks（hookable）暴露，供诊断与第三方联动。
  */
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { PanelExtensionHost } from './types/index.js'
+import type { HostContext } from 'dsh-tauri'
+import type { PanelExtensionHost } from './types'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'pathe'
-import { PLUGIN_NAME } from '../shared/constants.js'
-import { providerHooks } from './hooks/index.js'
-import { mountPanelExtensionRoutes } from './routes/index.js'
-import { agentSkillRoots } from './service/agents.js'
-import { argvProfile, profileDir } from './service/profile.js'
-import { loadState } from './storage/index.js'
+import { PLUGIN_NAME } from '../shared/constants'
+import { providerHooks } from './hooks'
+import { mountPanelExtensionRoutes } from './routes'
+import { agentSkillRoots } from './service/agents'
+import { argvProfile, profileDir } from './service/profile'
+import { getSkillRoots } from './service/skill-root'
 
 export const name = PLUGIN_NAME
 
@@ -46,7 +46,7 @@ export const inject = ['webServer', 'skills', 'connection']
 /** The provider plugin's structural shape (name/apply export). */
 interface FilesystemSkillPlugin {
   name: string
-  apply: (context: Context, config?: unknown) => void
+  apply: (context: unknown, config?: unknown) => void
 }
 
 /** Platform loader subset used to resolve DSH-owned packages from its base URL. */
@@ -66,9 +66,9 @@ interface PluginFiber {
   dispose: () => Promise<void>
 }
 
-export function apply(ctx: Context, config?: Config): void {
+export function apply(ctx: HostContext, config?: Config): void {
   const profile = config?.profile ?? argvProfile() ?? 'web'
-  ctx.inject(['webServer', 'skills', 'connection'], (hostCtx: Context) => {
+  ctx.inject(['webServer', 'skills', 'connection'], (hostCtx: HostContext) => {
     // The web bundle disables the host-plane `skill-filesystem` row on
     // purpose (presets own per-session discovery). The Settings manager
     // mounts its own host-plane provider as a CHILD of this plugin: it dies
@@ -101,7 +101,7 @@ export function apply(ctx: Context, config?: Config): void {
           // no node_modules. Resolve DSH-owned packages through the platform
           // loader (the same path used by preset rows), not native ESM relative
           // to this linked plugin's real path.
-          const loader = (hostCtx as Context & { loader: PlatformPluginLoader }).loader
+          const loader = (hostCtx as unknown as { loader: PlatformPluginLoader }).loader
           const plugin = await loadFilesystemSkillPlugin(loader)
           if (providerFiber !== undefined) {
             const old = providerFiber
@@ -117,7 +117,7 @@ export function apply(ctx: Context, config?: Config): void {
             return
           const roots = [
             packagedSkillsDir(),
-            ...loadState().skillRoots.flatMap(entry => entry.roots),
+            ...(await getSkillRoots()).flatMap(entry => entry.roots),
             ...agentSkillRoots(),
           ].filter(dir => existsSync(dir))
           try {

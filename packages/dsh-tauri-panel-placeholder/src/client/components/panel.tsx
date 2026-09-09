@@ -1,12 +1,12 @@
 import type { ReactElement } from 'react'
 import type { PlaceholderPanelProps } from '../types'
+import { Icon, IconPlaceholder } from 'dsh-tauri-ui/client'
 import { LOCALE_NAMESPACE, PANEL_ID, PANEL_LOCALE_KEY } from '../constants'
 import { Content } from './content'
-import { IconPlaceholder } from './icons'
 
 /**
  * components/panel.tsx — 面板区（sidebar.panel.action 槽）样板条目组件：
- * 「定时任务」。槽位注册在 register/panel.ts（installPanel）。
+ * 「定时任务」。槽位注册在 register/panel.ts（registerPanel）。
  */
 
 export function PlaceholderPanel(props: PlaceholderPanelProps): ReactElement {
@@ -17,7 +17,7 @@ export function PlaceholderPanel(props: PlaceholderPanelProps): ReactElement {
   }
 
   return (
-    <ActionItem id={PANEL_ID} icon={<IconPlaceholder />} onClick={onClick}>
+    <ActionItem id={PANEL_ID} icon={<Icon as={IconPlaceholder} />} onClick={onClick}>
       {t(PANEL_LOCALE_KEY)}
     </ActionItem>
   )

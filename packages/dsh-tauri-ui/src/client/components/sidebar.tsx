@@ -31,6 +31,7 @@ import { SlotOutlet } from '@deepseek-ai/dsh-client-ui-renderer'
 import { useEffect, useRef } from 'react'
 import {
   SETTINGS_SECTION_SLOT,
+  SETTINGS_STYLE_ID,
 } from '../constants'
 import { concealSettingsObstructions } from '../dom/settings-obstructions'
 import { useSettingsSectionRows } from '../hooks/sections'
@@ -45,8 +46,11 @@ import {
   settingsStore,
   useSettingsUi,
 } from '../store'
-import { ArrowRight } from './icons'
+import { useMountStyle } from '../style'
+import { Icon } from './icon'
+import { ArrowLeft } from './icons'
 import { SettingsNavIcon } from './nav-icon'
+import settingsSidebarStyle from './sidebar.cssr'
 
 /**
  * 侧边栏组件：整窗 docked 左栏 + 右侧官方设置分区内容。
@@ -57,6 +61,7 @@ export function SettingsSidebar(_props: SettingsSidebarProps): ReactElement | nu
   const ui = useSettingsUi()
   const rows = useSettingsSectionRows()
   useSettingsLocale()
+  useMountStyle(settingsSidebarStyle, SETTINGS_STYLE_ID)
   const searchRef = useRef<HTMLInputElement>(null)
   const { dragging, onHandlePointerDown } = useRailDrag()
 
@@ -108,53 +113,53 @@ export function SettingsSidebar(_props: SettingsSidebarProps): ReactElement | nu
     : visible[0]?.id
 
   return (
-    <div className="dsh-tu-settingsRoot" data-slot-sidebar="dsh-tauri-ui">
+    <div className="dshp-settings-sidebar" data-slot-sidebar="dsh-tauri-ui">
       <div
-        className="dsh-tu-settingsRail"
+        className="dshp-settings-sidebar__rail"
         style={{ '--dsh-settings-rail-width': `${railWidth}px` } as React.CSSProperties}
       >
         <button
           type="button"
-          className="dsh-tu-settingsBack"
+          className="dshp-settings-sidebar__back"
           onClick={() => closeSettings()}
         >
-          <ArrowRight />
+          <Icon as={ArrowLeft} />
           {settingsText('back')}
         </button>
         <input
           ref={searchRef}
-          className="dsh-tu-settingsSearch"
+          className="dshp-settings-sidebar__search"
           value={ui.query}
           placeholder={settingsText('search')}
           aria-label={settingsText('search')}
           onChange={event =>
             settingsStore.set(state => ({ ...state, query: event.target.value }))}
         />
-        <nav className="dsh-tu-settingsNav" aria-label={settingsText('settings')}>
+        <nav className="dshp-settings-sidebar__nav" aria-label={settingsText('settings')}>
           {visible.map(row => (
             <button
               key={row.id}
               type="button"
-              className={`dsh-tu-settingsNavItem${row.id === activeId ? ' dsh-tu-settingsNavItemActive' : ''}`}
+              className={`dshp-settings-sidebar__nav-item${row.id === activeId ? ' dshp-settings-sidebar__nav-item--active' : ''}`}
               aria-current={row.id === activeId ? 'true' : undefined}
               onClick={() => selectSection(row.id)}
             >
               <SettingsNavIcon id={row.id} />
-              <span className="dsh-tu-settingsNavLabel">{row.label}</span>
+              <span className="dshp-settings-sidebar__nav-label">{row.label}</span>
             </button>
           ))}
-          {visible.length === 0 && <div className="dsh-tu-settingsEmpty">{settingsText('noResults')}</div>}
+          {visible.length === 0 && <div className="dshp-settings-sidebar__empty">{settingsText('noResults')}</div>}
         </nav>
       </div>
       <div
         role="separator"
         aria-orientation="vertical"
         aria-label={settingsText('settings')}
-        className={`dsh-tu-settingsHandle${dragging ? ' dsh-tu-settingsHandleDragging' : ''}`}
+        className={`dshp-settings-sidebar__handle${dragging ? ' dshp-settings-sidebar__handle--dragging' : ''}`}
         onPointerDown={onHandlePointerDown}
       />
-      <div className="dsh-tu-settingsContentOuter">
-        <div className="dsh-tu-settingsContentInner">
+      <div className="dshp-settings-sidebar__content-outer">
+        <div className="dshp-settings-sidebar__content-inner">
           {activeId !== undefined && (
             <SlotOutlet
               slotKey={SETTINGS_SECTION_SLOT}

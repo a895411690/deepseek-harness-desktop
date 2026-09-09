@@ -4,35 +4,25 @@
  * 由 archive.ts 在业务操作内触发，见 host/hooks.ts。
  */
 
-import type { HostContext, PluginConfig } from './types/index.js'
-import { homedir } from 'node:os'
-import process from 'node:process'
-import { join } from 'pathe'
-import { SESSION_PLUGIN_NAME } from '../shared/constants.js'
-import { buildRoutes } from './routes/index.js'
-import { migrateLegacyArchive } from './service/archive.js'
-
-function resolveDshHome(config: PluginConfig): string {
-  return typeof config.dshHome === 'string' && config.dshHome ? config.dshHome : process.env.DSH_HOME ?? join(homedir(), '.dsh')
-}
+import type { HostContext, PluginConfig } from './types'
+import { SESSION_PLUGIN_NAME } from '../shared/constants'
+import { buildRoutes } from './routes'
+import { migrateLegacyArchive } from './service/archive'
 
 /**
  * 插件体：迁移旧版归档 + 注册 HTTP 路由。
  * @param ctx - 宿主根上下文（注入 webServer/sessions/workspaceRegistry）。
- * @param config - 插件行配置（dshHome 等，仅用于旧版归档迁移路径）。
+ * @param config - 插件行配置（保留；存储路径由 storage 单例按 DSH_HOME 解析）。
  */
-export function apply(ctx: HostContext, config: PluginConfig = {}): void {
-  const cfg = config ?? {}
-  const dshHome = resolveDshHome(cfg)
-
+export function apply(ctx: HostContext, _config: PluginConfig = {}): void {
   // 旧版自持归档一次性迁入宿主集合（幂等：文件不存在或为空则直接跳过）。
   ctx.effect(() => {
-    void migrateLegacyArchive(ctx, dshHome)
+    void migrateLegacyArchive(ctx)
   }, `${SESSION_PLUGIN_NAME}: migrate legacy archive`)
 
   // HTTP 路由注册（客户端经此调用 archived/archive/unarchive/delete/clear）。
   ctx.effect(() => {
-    const disposers = buildRoutes(ctx, dshHome).map(route => ctx.webServer.register(route))
+    const disposers = buildRoutes(ctx).map(route => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers)
         dispose()

@@ -16,7 +16,7 @@ export type { SettingsRow } from '../types'
  * label 与官方一致经 resolveSlotLabel 语义解析（函数型 label 即按当前
  * locale 求值，所以 locale 变更也要触发重算）。
  *
- * 槽注册中心引用不在此持有：由 register/sections.ts 的 installSettingsSections
+ * 槽注册中心引用不在此持有：由 register/sections.ts 的 registerSettingsSections
  * 在 apply 时存入（卸载即清），本文件经 getSettingsSlots() 读取——槽位
  * 所有权与卸载清理只存在一处。
  */

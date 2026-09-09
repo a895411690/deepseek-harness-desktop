@@ -27,7 +27,7 @@ export const settingsLocaleRev = createExternalStore({ rev: 0 })
  * 在 apply 里安装：注册本插件的双语字典，并桥接 locale 变更到 rev。
  * @param ctx - 客户端根上下文（须已注入 locale 服务）。
  */
-export function installSettingsLocale(ctx: ClientContext): void {
+export function registerSettingsLocale(ctx: ClientContext): void {
   activeLocale = ctx.locale.getLocale().active
   ctx.locale.register(SETTINGS_UI_NS, 'zh', DICT_ZH)
   ctx.locale.register(SETTINGS_UI_NS, 'en', DICT_EN)

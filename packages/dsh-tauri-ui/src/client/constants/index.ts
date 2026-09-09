@@ -11,7 +11,10 @@ export const SETTINGS_ONBOARDING_SLOT = 'settings.onboarding'
 
 export const SETTINGS_SHELL_SEAT_ID = SETTINGS_UI_PLUGIN
 export const SETTINGS_SIDEBAR_ID = 'dsh-tauri-ui-settings'
-export const SETTINGS_STYLE_ID = 'dsh-tauri-ui-settings-styles'
+export const SETTINGS_STYLE_ID = 'dsh-tauri-ui-settings-sidebar-styles'
+export const SETTINGS_TRIGGER_STYLE_ID = 'dsh-tauri-ui-settings-trigger-styles'
+export const SETTINGS_NAV_ICON_STYLE_ID = 'dsh-tauri-ui-settings-nav-icon-styles'
+export const MENU_SELECT_STYLE_ID = 'dsh-tauri-ui-menu-select-styles'
 export const TURN_NAVIGATION_STYLE_ID = 'dsh-tauri-ui-turn-navigation-styles'
 export const TURN_NAVIGATION_LABEL_ZH = '轮次导航'
 export const TURN_NAVIGATION_LABEL_EN = 'Turn navigation'

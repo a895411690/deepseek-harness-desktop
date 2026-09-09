@@ -35,18 +35,27 @@ import {
   SETTINGS_SHELL_OVERLAY_SLOT,
   SETTINGS_SHELL_SEAT_ID,
   SETTINGS_UI_PLUGIN,
+  TURN_NAVIGATION_STYLE_ID,
 } from './constants'
-import { installSettingsLocale } from './locales'
-import { installSettingsSections } from './register/sections'
+import { registerSettingsLocale } from './locales'
+import { registerSettingsSections } from './register/sections'
 import { registerSettingsSidebar } from './register/sidebar'
 import { registerSettingsTrigger } from './register/trigger'
-import { mountSettingsStyles, mountTurnNavigationStyles } from './styles'
+import { mountStyle } from './style'
+import turnNavigationStyle from './styles/index.cssr'
 
 /** 插件显示名（诊断元数据）。 */
 export const name = SETTINGS_UI_PLUGIN
 
 /** 需要的客户端服务：slots（注册点位）、layout（未来 chrome 的面板动作）、locale（双语文案）。 */
 export const inject = ['slots', 'layout', 'locale']
+
+// The client entry is also the workspace-wide shared UI surface.
+export * from './components'
+export { cssr } from './cssr'
+export { mountStyle, useMountStyle } from './style'
+export { styles } from './theme'
+export type * from './types'
 
 /**
  * 插件体：注册未来 chrome 的落点座位 + 设置侧边栏功能。
@@ -75,21 +84,18 @@ export function apply(ctx: ClientContext): void {
   // 侧边栏依赖 renderer 补丁导出的 <SlotOutlet>（任意槽渲染的入口）。核心未带
   // 补丁时（旧安装），SlotOutlet 为 undefined —— 此时降级：不注册侧边栏与
   // 触发条目，官方设置 dialog 原样工作，绝不白屏（功能整体不生效即可）。
-  ctx.effect(
-    () => mountSettingsStyles(),
-    'dsh-tauri-ui: settings styles',
-  )
+  // 设置侧边栏/触发器/导航图标样式由各自组件 useMountStyle 自动挂载。
   // The core turn rail is rendered inside a clipped conversation column. Keep
   // its semantic nav visible in the 56px sidebar rail by patching only the
   // stable bilingual aria label; core-owned children and scrolling stay intact.
   ctx.effect(
-    () => mountTurnNavigationStyles(),
+    () => mountStyle(turnNavigationStyle, TURN_NAVIGATION_STYLE_ID),
     'dsh-tauri-ui: turn navigation styles',
   )
-  installSettingsLocale(ctx)
+  registerSettingsLocale(ctx)
   // 设置分区投影：引用清理也走 effect（插件卸载后 slotsRef 复位，避免跨实例残留）。
   ctx.effect(
-    () => installSettingsSections(ctx.slots),
+    () => registerSettingsSections(ctx.slots as never),
     'dsh-tauri-ui: settings sections projection',
   )
   if (typeof SlotOutlet === 'function') {

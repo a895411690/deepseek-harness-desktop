@@ -9,11 +9,11 @@ import {
   CMD_IMPORT_PET,
   CMD_LIST_PETS,
   CMD_LIST_PRESET_PETS,
-  CMD_PUSH_PET_SESSION,
   CMD_SET_ACTIVE_PET,
   CMD_SET_PET_ENABLED,
   CMD_SET_PET_SIZE,
   CMD_SHOW_PET,
+  CMD_UPDATE_PRESET_PET,
 } from '../constants'
 
 export function fetchPetStatus(): Promise<PetStatus> {
@@ -52,14 +52,6 @@ export function importPet(name: string, data: string): Promise<PetListItem> {
   return invokeBridgedTauri<PetListItem>(CMD_IMPORT_PET, { name, data })
 }
 
-/** Forward one untouched DSH session snapshot to the pet webview. */
-export function pushPetSession(
-  action: 'create' | 'update' | 'remove',
-  session: Record<string, unknown>,
-): Promise<void> {
-  return invokeBridgedTauri<void>(CMD_PUSH_PET_SESSION, { action, session })
-}
-
 /** 预设宠物清单（resources/preset-pets.json + 本机安装状态）。 */
 export function fetchPresetPets(): Promise<PresetPetItem[]> {
   return invokeBridgedTauri<PresetPetItem[]>(CMD_LIST_PRESET_PETS)
@@ -68,6 +60,14 @@ export function fetchPresetPets(): Promise<PresetPetItem[]> {
 /** 开始下载并安装预设宠物（后台执行；进度用 fetchPresetDownloadProgress 轮询）。 */
 export function downloadPresetPet(id: string): Promise<void> {
   return invokeBridgedTauri<void>(CMD_DOWNLOAD_PRESET_PET, { id })
+}
+
+/**
+ * 更新已安装的预设宠物（后台执行；进度用 fetchPresetDownloadProgress 轮询）。
+ * 若宠物正在使用，宿主会先强制停用，更新结束后自动重新启用。
+ */
+export function updatePresetPet(id: string): Promise<void> {
+  return invokeBridgedTauri<void>(CMD_UPDATE_PRESET_PET, { id })
 }
 
 /** 查询预设宠物下载进度。 */

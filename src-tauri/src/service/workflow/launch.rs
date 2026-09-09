@@ -440,6 +440,17 @@ pub async fn launch(app_handle: tauri::AppHandle) -> Result<(), String> {
         log::error!("prepare active core runtime failed: {e}");
         return Err(e);
     }
+    // prepare 可能因核心原生模块的 ABI 与本地 node 不匹配而改用捆绑运行时
+    // （issue #441），此时必须重新解析：下面的 DSH_NODE 注入与 PATH 前置都以
+    // 这里的结果为准，否则子进程仍会用那个加载不了原生模块的本地 node。
+    let node_binary_path = config::get_node_binary_path(&app_handle);
+    if !node_binary_path.exists() {
+        log::error!("Node.js runtime resolved for launch is missing");
+        return Err(format!(
+            "NODE_NOT_FOUND: Node.js runtime is missing: {}",
+            node_binary_path.display()
+        ));
+    }
     let mut envs: HashMap<String, String> = HashMap::new();
     envs.insert(
         "DSH_HOME".to_string(),

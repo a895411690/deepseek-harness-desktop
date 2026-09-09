@@ -22,7 +22,7 @@ const en: Record<keyof typeof zh, string> = {
 }
 
 /** 注册面板文案命名空间（effect 生命周期，随插件卸载注销）。 */
-export function installPanelLocale(ctx: ClientContext): void {
+export function registerPanelLocale(ctx: ClientContext): void {
   ctx.effect(
     () => {
       const disposeZh = ctx.locale.register(NS, 'zh', zh)

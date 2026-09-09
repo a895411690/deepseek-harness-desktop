@@ -7,17 +7,16 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { SkillRootEntry } from '../service/skill-root'
 import type { SkillInput } from '../service/skills.ts'
-import type { SkillRootEntry } from '../storage/index.ts'
 import type { HostSkill, PanelExtensionHost, RouteRegistrar, SkillRepositoryMetadata } from '../types/index.ts'
 import { mkdirSync } from 'node:fs'
-import process from 'node:process'
 import { readJsonBody, sameOrigin, sendJson } from 'dsh-tauri'
 import { isAbsolute, join, relative, resolve, sep } from 'pathe'
 import { API_PREFIX } from '../../shared/constants.ts'
 import { openDirectory } from '../service/opener.ts'
+import { getSkillRoots, skillsRootDir } from '../service/skill-root'
 import { deleteSkill, setSkillPolicy, updateSkillFile, userSkillsDir, validateSkillInput, writeSkill } from '../service/skills.ts'
-import { loadState, pluginStateDir } from '../storage/index.ts'
 
 /** One catalog skill as the browser sees it (edit flags and repository metadata added). */
 export type SkillRow = HostSkill & {
@@ -36,21 +35,21 @@ export type SkillRow = HostSkill & {
  * package (under node_modules) are custom-sourced too but stay read-only —
  * edits there would die with the next plugin update.
  */
-function customSkillWritable(dir: string, dshHome: string | undefined): boolean {
-  const state = pluginStateDir(dshHome)
+async function customSkillWritable(dir: string): Promise<boolean> {
+  const state = skillsRootDir()
   if (dir === state || dir.startsWith(state + sep))
     return true
-  return loadState(dshHome).skillRoots.some(entry =>
+  return (await getSkillRoots()).some(entry =>
     entry.roots.some(root => dir === root || dir.startsWith(root + sep)))
 }
 
 /** Whether the save route may write this catalog row back to disk. */
-function skillWritable(skill: HostSkill, dir: string | undefined, dshHome: string | undefined): boolean {
+async function skillWritable(skill: HostSkill, dir: string | undefined): Promise<boolean> {
   if (dir === undefined)
     return false
   if (skill.source === 'user-dsh')
     return true
-  return skill.source === 'custom' && customSkillWritable(dir, dshHome)
+  return skill.source === 'custom' && await customSkillWritable(dir)
 }
 
 function pathWithin(path: string, parent: string): boolean {
@@ -79,12 +78,12 @@ function repositoryForSkill(
   }
 }
 
-function toSkillRow(skill: HostSkill, entries: SkillRootEntry[], dshHome: string | undefined): SkillRow {
+async function toSkillRow(skill: HostSkill, entries: SkillRootEntry[]): Promise<SkillRow> {
   const dir = skill.resourceBase?.kind === 'directory' ? skill.resourceBase.path : undefined
   const repository = repositoryForSkill(skill, entries)
   return {
     ...skill,
-    editable: skillWritable(skill, dir, dshHome),
+    editable: await skillWritable(skill, dir),
     removable: skill.source === 'user-dsh',
     ...(dir !== undefined ? { dir } : {}),
     policyEditable: dir !== undefined,
@@ -111,10 +110,10 @@ export interface SkillRoutesConfig {
 }
 
 /** Collect the current catalog from the registry and shape it into rows. */
-async function listSkillRows(host: PanelExtensionHost, dshHome: string | undefined): Promise<SkillRow[]> {
+async function listSkillRows(host: PanelExtensionHost): Promise<SkillRow[]> {
   const skills = await host.skills.list()
-  const entries = loadState(dshHome).skillRoots
-  return sortSkillRows(skills.map(skill => toSkillRow(skill, entries, dshHome)))
+  const entries = await getSkillRoots()
+  return sortSkillRows(await Promise.all(skills.map(skill => toSkillRow(skill, entries))))
 }
 
 export function registerSkillRoutes(
@@ -123,7 +122,6 @@ export function registerSkillRoutes(
   config: SkillRoutesConfig,
 ): Array<() => void> {
   const disposers: Array<() => void> = []
-  const dshHome = process.env.DSH_HOME
 
   disposers.push(register({
     kind: 'exact',
@@ -135,7 +133,7 @@ export function registerSkillRoutes(
         return
       }
       try {
-        sendJson(response, 200, { skills: await listSkillRows(host, dshHome) })
+        sendJson(response, 200, { skills: await listSkillRows(host) })
       }
       catch (error) {
         sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
@@ -163,7 +161,7 @@ export function registerSkillRoutes(
       }
       try {
         await config.remountProvider()
-        sendJson(response, 200, { skills: await listSkillRows(host, dshHome) })
+        sendJson(response, 200, { skills: await listSkillRows(host) })
       }
       catch (error) {
         sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
@@ -232,7 +230,7 @@ export function registerSkillRoutes(
         const existing = (await host.skills.list()).find(skill => skill.name === input.name)
         if (existing !== undefined) {
           const dir = existing.resourceBase?.kind === 'directory' ? existing.resourceBase.path : undefined
-          if (!skillWritable(existing, dir, dshHome)) {
+          if (!await skillWritable(existing, dir)) {
             sendJson(response, 403, { error: `skills from source '${existing.source}' are read-only` })
             return
           }
@@ -339,7 +337,7 @@ export function registerSkillRoutes(
           mkdirSync(dir, { recursive: true })
         }
         else if (body.target === 'plugin-state') {
-          dir = pluginStateDir()
+          dir = skillsRootDir()
           mkdirSync(dir, { recursive: true })
         }
         else if (body.target === 'skill') {
@@ -361,7 +359,7 @@ export function registerSkillRoutes(
             sendJson(response, 400, { error: 'id is required' })
             return
           }
-          const entry = loadState().skillRoots.find(row => row.id === body.id)
+          const entry = (await getSkillRoots()).find(row => row.id === body.id)
           if (entry === undefined) {
             sendJson(response, 404, { error: 'repository not found' })
             return

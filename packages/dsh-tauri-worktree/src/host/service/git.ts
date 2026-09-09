@@ -1,4 +1,4 @@
-import type { GitOptions, OperationResult } from '../types/index.js'
+import type { GitOptions, OperationResult } from '../types'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'pathe'

@@ -57,16 +57,10 @@ export interface PanelProtocol {
 export interface PanelActionItemProps {
   /** 条目唯一标识（active 态：当前内容区替换 id 与之相等则保持选中样式）。 */
   id: string
-  /** 条目图标（16px 语义，自绘 SVG 组件实例）。 */
+  /** 条目图标（16px 语义，共享图标或官方 primitives 组件实例）。 */
   icon?: ReactElement
   /** 点击行为：自定义动作；打开内容区替换典型写法是调 renderPanelContent。 */
   onClick?: () => void
   /** 条目文字（wide 态显示；折叠态宿主 CSS 自动隐藏，只留图标钮）。 */
   children?: ReactNode
-}
-
-/** 自绘 SVG 图标的通用 props。 */
-export interface IconProps {
-  size?: number
-  className?: string
 }

@@ -22,10 +22,18 @@ const WEEKDAY_LABELS: Record<Weekday, string> = {
 /** 把计划渲染成人类可读描述（与 ASCII 卡片一致：每天 09:00 / 间隔 30 分 / 工作日 09:00 / 星期五 09:00）。 */
 export function describeSchedule(schedule: ScheduleForm, t: Translate): string {
   switch (schedule.kind) {
+    case 'once':
+      return `${t('scheduleOnce')} ${formatLocalTime(schedule.at) ?? schedule.at}`
+    case 'hourly':
+      return `${t('scheduleHourly')} :${String(schedule.minute).padStart(2, '0')}`
     case 'daily':
       return `${t('scheduleDaily')} ${schedule.time}`
     case 'interval':
       return `${t('scheduleInterval')} ${schedule.everyMinutes}${t('minuteShort')}`
+    case 'monthly':
+      return `${t('scheduleMonthly')} ${schedule.day} ${schedule.time}`
+    case 'custom':
+      return `${t('scheduleCustom')} ${schedule.everyDays}${t('dayShort')} ${schedule.time}`
     case 'workdays':
       return `${t('scheduleWorkdays')} ${schedule.time}`
     case 'weekly':

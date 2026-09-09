@@ -12,14 +12,14 @@
  *   - client/             Browser half（API 调用 + 设置页三个 tab）。
  */
 
-import { PLUGIN_NAME } from './shared/constants.js'
+import { PLUGIN_NAME } from './shared/constants'
 
 /** 插件名（诊断元数据，与导出的 name 一致）。 */
 export const name = PLUGIN_NAME
 
 export const inject = ['webServer', 'skills', 'connection']
 
-export { apply, loadFilesystemSkillPlugin, packagedSkillsDir } from './host/apply.js'
-export type { Config } from './host/apply.js'
-export { providerHooks } from './host/hooks/index.js'
-export type { ProviderLifecycleHooks } from './host/hooks/index.js'
+export { apply, loadFilesystemSkillPlugin, packagedSkillsDir } from './host/apply'
+export type { Config } from './host/apply'
+export { providerHooks } from './host/hooks'
+export type { ProviderLifecycleHooks } from './host/hooks'

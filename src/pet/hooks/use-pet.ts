@@ -7,10 +7,16 @@ export const PET_STATUSES = [
   'moving-left',
   'moving-right',
   'waving',
+  // 细分工作状态档位（host reducer workStatus；动画名映射见 pet-config PRESET_SESSION_ANIMATIONS）
+  'thinking',
+  'working',
+  'result',
   'waiting',
   'running',
   'review',
   'failed',
+  'success',
+  'error',
 ] as const
 
 export type PetStatus = (typeof PET_STATUSES)[number]

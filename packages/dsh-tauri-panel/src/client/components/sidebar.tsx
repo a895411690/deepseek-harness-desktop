@@ -1,9 +1,10 @@
 import type { CSSProperties, ReactElement } from 'react'
 import type { SidebarRootProps } from '../types'
 import { SlotOutlet } from '@deepseek-ai/dsh-client-ui-renderer'
+import { CommentPlus, FishMark, Icon, useMountStyle } from 'dsh-tauri-ui/client'
 import { useEffect, useRef, useState } from 'react'
-import { COLLAPSE_SETTLE_MS, PANEL_CLASSES, PANEL_DATA_ATTRIBUTES, SCROLLBAR_LINGER_MS } from '../constants'
-import { ChatOutline, FishMark } from './icons'
+import { COLLAPSE_SETTLE_MS, PANEL_DATA_ATTRIBUTES, PANEL_SIDEBAR_COMPAT_CLASS, SCROLLBAR_LINGER_MS, SIDEBAR_STYLE_ID } from '../constants'
+import sidebarStyle from './sidebar.cssr'
 
 /**
  * components/sidebar.tsx — sidebar 槽整槽替换的克隆组件（priority -1 shadow 官方
@@ -11,8 +12,9 @@ import { ChatOutline, FishMark } from './icons'
  *
  * 结构为官方 SidebarRoot（dsh-client-ui-sidebar 0.1.1-rc.2）的克隆，改动点：
  *   - logoRow 高度 60px → 32px、底部间距 8px → 4px（需求①②）；
- *   - 「新会话」按钮从 logoRow 下方移入**面板区**（需求③），样式改为
- *     workspace 菜单项行样式（需求④，镜像官方 Rows.module.css .sessionRow）；
+ *   - 「新会话」按钮从 logoRow 下方移入**面板区**（需求③），样式镜像官方
+ *     ui-sidebar 的 New Session 按钮（elevated-fill 白底 + 12px 圆角；
+ *     独立类自给自足，不挂 menu-item，避免与面板区条目样式互相覆盖）；
  *   - 面板区 = 新会话菜单项 + 第三方功能项（槽 `sidebar.panel.action`，
  *     list/root，本条目 children 声明，协议⑤，见 PROTOCOL.md）。
  *
@@ -33,6 +35,7 @@ function cx(...parts: Array<string | false | undefined>): string {
 /** 克隆的 SidebarRoot：紧凑 logoRow + 面板区 + 官方子槽透传。 */
 export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar, t }: SidebarRootProps): ReactElement {
   const [settled, setSettled] = useState(false)
+  useMountStyle(sidebarStyle, SIDEBAR_STYLE_ID)
   useEffect(() => {
     setSettled(false)
     const timer = window.setTimeout(() => {
@@ -70,12 +73,12 @@ export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar
   return (
     <div
       className={cx(
-        PANEL_CLASSES.root,
-        !wide && PANEL_CLASSES.collapsed,
-        !wide && everWide.current && PANEL_CLASSES.railIn,
-        collapsed && wide && PANEL_CLASSES.fading,
-        !pointerInside && PANEL_CLASSES.quietBars,
-        wide && PANEL_CLASSES.wide,
+        'dshp-panel',
+        !wide && 'dshp-panel--collapsed',
+        !wide && everWide.current && 'dshp-panel--rail-in',
+        collapsed && wide && 'dshp-panel--fading',
+        !pointerInside && 'dshp-panel--quiet-bars',
+        wide && 'dshp-panel--wide',
       )}
       {...{ [PANEL_DATA_ATTRIBUTES.sidebar]: '' }}
       style={wide ? { '--dshp-width': `${collapsed ? lastWideWidth.current : width}px` } as CSSProperties : undefined}
@@ -87,11 +90,11 @@ export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar
         armLinger()
       }}
     >
-      <div className={PANEL_CLASSES.logoRow}>
+      <div className="dshp-panel__logo-row">
         {wide && (
           <button
             type="button"
-            className={PANEL_CLASSES.brand}
+            className="dshp-panel__brand"
             aria-label={t('session.new.label')}
             onClick={() => {
               console.warn('[dsh-tauri-panel] new session requested', { source: 'brand' })
@@ -103,19 +106,19 @@ export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar
               }
             }}
           >
-            <span className={PANEL_CLASSES.brandIdentity} aria-hidden="true">
-              <span className={PANEL_CLASSES.brandMark}>
+            <span className="dshp-panel__brand-identity" aria-hidden="true">
+              <span className="dshp-panel__brand-mark">
                 <SlotOutlet
                   slotKey="sidebar.brand.mark"
                   ownerProps={{ size: 24 }}
-                  opts={{ fallback: <FishMark size={24} /> }}
+                  opts={{ fallback: <Icon as={FishMark} size={24} /> }}
                 />
               </span>
-              <span className={PANEL_CLASSES.brandName}>
+              <span className="dshp-panel__brand-name">
                 <SlotOutlet
                   slotKey="sidebar.brand.name"
                   ownerProps={{}}
-                  opts={{ fallback: <span className={PANEL_CLASSES.fallbackBrandName}>DSH Local Build</span> }}
+                  opts={{ fallback: <span className="dshp-panel__fallback-brand-name">DSH Local Build</span> }}
                 />
               </span>
             </span>
@@ -123,26 +126,26 @@ export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar
         )}
         <button
           type="button"
-          className={`${PANEL_CLASSES.iconButton} ${PANEL_CLASSES.toggle}`}
+          className={`${'dshp-panel__icon-button'} ${'dshp-panel__toggle'}`}
           aria-label={collapsed ? t('toggle.open') : t('toggle.collapse')}
           title={collapsed ? t('toggle.open') : t('toggle.collapse')}
           onClick={() => toggleSidebar()}
         >
           {!wide && (
-            <span className={PANEL_CLASSES.railMark} aria-hidden="true">
+            <span className="dshp-panel__rail-mark" aria-hidden="true">
               <SlotOutlet
                 slotKey="sidebar.brand.mark"
                 ownerProps={{ size: 24 }}
-                opts={{ fallback: <FishMark size={24} /> }}
+                opts={{ fallback: <Icon as={FishMark} size={24} /> }}
               />
             </span>
           )}
         </button>
       </div>
-      <div className={PANEL_CLASSES.panelArea}>
+      <div className={`${'dshp-panel__panel-area'} ${PANEL_SIDEBAR_COMPAT_CLASS.logoRow}`}>
         <button
           type="button"
-          className={`${PANEL_CLASSES.menuItem} ${PANEL_CLASSES.newSession}`}
+          className={`${'dshp-panel__new-session'} ${PANEL_SIDEBAR_COMPAT_CLASS.newSession}`}
           title={t('session.new.label')}
           onClick={() => {
             console.warn('[dsh-tauri-panel] new session requested', { source: 'menu' })
@@ -154,13 +157,13 @@ export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar
             }
           }}
         >
-          <span className={PANEL_CLASSES.menuItemIcon}><ChatOutline size={wide ? 14 : 18} /></span>
-          <span className={PANEL_CLASSES.menuItemLabel}>{t('session.new')}</span>
+          <span className="dshp-panel__menu-item-icon"><Icon as={CommentPlus} size={wide ? 14 : 18} /></span>
+          <span className="dshp-panel__menu-item-label">{t('session.new')}</span>
         </button>
         <SlotOutlet slotKey="sidebar.panel.action" ownerProps={{ wide }} />
       </div>
 
-      <div className={PANEL_CLASSES.regionArea}>
+      <div className="dshp-panel__region-area">
         <SlotOutlet
           slotKey="sidebar.workspaces"
           ownerProps={{
@@ -173,11 +176,11 @@ export function SidebarRootClone({ collapsed, width, startSession, toggleSidebar
         />
       </div>
 
-      <div className={PANEL_CLASSES.footArea}>
-        <div className={PANEL_CLASSES.footerActions}>
+      <div className="dshp-panel__foot-area">
+        <div className="dshp-panel__footer-actions">
           <SlotOutlet slotKey="sidebar.footer.action" ownerProps={{ wide }} />
         </div>
-        <div className={PANEL_CLASSES.settingsArea}>
+        <div className="dshp-panel__settings-area">
           <SlotOutlet slotKey="sidebar.settings" ownerProps={{ wide }} />
         </div>
       </div>

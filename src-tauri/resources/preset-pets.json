@@ -3,9 +3,9 @@
     "id": "maid-deepseek-whale",
     "name": "Maid DeepSeek Whale",
     "desc": "一只小小的七比蓝头发的鲸鱼女仆Codex宠物，穿着海军蓝裙子，白色褶边，蓝眼睛，侧鳍和鲸鱼尾巴。",
-    "image": "https://raw.githubusercontent.com/PC2005-cloud/dsh-pet/f0f772e9cda4074d1870c97afd01dc26b91e943c/dsh-pet/assets/preview/daiji-huxi-xiuxian.gif",
+    "image": "https://raw.githubusercontent.com/PC2005-cloud/dsh-pet/e1ff8c1e4001878cbb80441262d530e16541f138/dsh-pet/assets/preview/daiji-huxi-xiuxian.gif",
     "repo": "https://github.com/PC2005-cloud/dsh-pet",
-    "ref": "f0f772e9cda4074d1870c97afd01dc26b91e943c",
+    "ref": "e1ff8c1e4001878cbb80441262d530e16541f138",
     "assets": "dsh-pet/assets",
     "sizeMb": 113
   }

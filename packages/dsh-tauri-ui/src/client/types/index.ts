@@ -42,3 +42,23 @@ export interface SettingsRow {
 
 /** Keys in the settings UI translation dictionary. */
 export type SettingsUiKey = 'back' | 'search' | 'settings' | 'noResults'
+
+/** One option displayed by the shared primitives Menu select. */
+export interface MenuSelectOption {
+  id: string
+  label: string
+}
+
+/** Props for the shared official-style Menu select trigger. */
+export interface MenuSelectProps {
+  value: string
+  options: readonly MenuSelectOption[]
+  onSelect: (id: string) => void
+  label: string
+  /** `pill` matches LanguageRow; `default` matches regular form selectors. */
+  variant?: 'pill' | 'default'
+  /** Existing plugin classes can remain stable during migration. */
+  triggerClassName?: string
+  labelClassName?: string
+  chevronClassName?: string
+}

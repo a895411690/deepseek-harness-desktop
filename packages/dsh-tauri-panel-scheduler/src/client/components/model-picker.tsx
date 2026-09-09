@@ -7,11 +7,12 @@
  */
 
 import type { ModelCatalogFailure, ModelOption, ModelTranslate } from '../types'
-import type { JSX } from 'react'
-import { IconCheckOutline16, IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutline16 as Check, IconChevronDownOutline14 as ChevronDown } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Icon, useMountStyle } from 'dsh-tauri-ui/client'
 import { useEffect, useState } from 'react'
-import { SCHEDULER_CLASSES as K } from '../constants'
+import { MODEL_PICKER_STYLE_ID } from '../constants'
 import { MenuPopup, MenuRow, useMenuState } from './menu'
+import modelPickerStyle from './model-picker.cssr'
 
 export function ModelPicker({
   modelT,
@@ -27,7 +28,8 @@ export function ModelPicker({
   readonly modelKey: string
   readonly reasoningEffort: string
   readonly onSelection: (modelKey: string, reasoningEffort: string) => void
-}): JSX.Element {
+}) {
+  useMountStyle(modelPickerStyle, MODEL_PICKER_STYLE_ID)
   const menu = useMenuState()
   const [pane, setPane] = useState<'root' | 'model' | 'effort'>('root')
   const selected = models.find(item => `${item.provider}::${item.model}` === modelKey)
@@ -83,10 +85,10 @@ export function ModelPicker({
   }
 
   return (
-    <div className={`${K.modelSelect}${menu.open ? ` ${K.modelSelectOpen}` : ''}`} ref={menu.root}>
+    <div className={`${'dshp-scheduler__model-select'}${menu.open ? ` ${'dshp-scheduler__model-select--open'}` : ''}`} ref={menu.root}>
       <button
         type="button"
-        className={K.modelTrigger}
+        className="dshp-scheduler__model-trigger"
         aria-label={selected === undefined
           ? modelT('trigger.selectAria')
           : effortLabel === undefined
@@ -103,10 +105,10 @@ export function ModelPicker({
         }}
       >
         <span>{trigger}</span>
-        {effortLabel !== undefined && <span className={K.modelTriggerEffort}>{effortLabel}</span>}
-        <IconChevronDownOutline14 className={`${K.modelTriggerChevron}${menu.open ? ` ${K.modelTriggerChevronOpen}` : ''}`} />
+        {effortLabel !== undefined && <span className="dshp-scheduler__model-trigger-effort">{effortLabel}</span>}
+        <Icon as={ChevronDown} className={`${'dshp-scheduler__model-trigger-chevron'}${menu.open ? ` ${'dshp-scheduler__model-trigger-chevron--open'}` : ''}`} />
       </button>
-      <MenuPopup open={menu.open} anchor={menu.root} menuRef={menu.menu} up end className={`${K.modelSelectMenu} is-up is-end`} ariaLabel={modelT('menu.aria')}>
+      <MenuPopup open={menu.open} anchor={menu.root} menuRef={menu.menu} up end className={`${'dshp-scheduler__model-select-menu'} is-up is-end`} ariaLabel={modelT('menu.aria')}>
         {pane === 'root' && (
           <>
             <MenuRow
@@ -130,13 +132,13 @@ export function ModelPicker({
         {pane === 'model' && (
           <>
             {failures.map(failure => (
-              <div key={failure.provider} className={K.modelWarning}>
+              <div key={failure.provider} className="dshp-scheduler__model-warning">
                 {modelT('warning.groupLoad', { name: failure.providerLabel, message: failure.message })}
               </div>
             ))}
             {modelGroups.map(([provider, group]) => (
-              <section key={provider} role="group" aria-label={group.label} className={K.modelGroup}>
-                <div className={K.modelGroupTitle}>{group.label}</div>
+              <section key={provider} role="group" aria-label={group.label} className="dshp-scheduler__model-group">
+                <div className="dshp-scheduler__model-group-title">{group.label}</div>
                 {group.models.map((item) => {
                   const value = `${item.provider}::${item.model}`
                   return (
@@ -145,21 +147,21 @@ export function ModelPicker({
                       type="button"
                       role="menuitemradio"
                       aria-checked={value === modelKey}
-                      className={K.modelOption}
+                      className="dshp-scheduler__model-option"
                       title={item.label}
                       onClick={() => selectModel(item)}
                     >
-                      <span className={K.modelOptionCopy}>
-                        <span className={K.modelName}>{item.label}</span>
-                        {item.description !== undefined && <span className={K.modelDescription}>{item.description}</span>}
+                      <span className="dshp-scheduler__model-option-copy">
+                        <span className="dshp-scheduler__model-name">{item.label}</span>
+                        {item.description !== undefined && <span className="dshp-scheduler__model-description">{item.description}</span>}
                       </span>
-                      <span className={K.modelCheck}>{value === modelKey && <IconCheckOutline16 />}</span>
+                      <span className="dshp-scheduler__model-check">{value === modelKey && <Icon as={Check} />}</span>
                     </button>
                   )
                 })}
               </section>
             ))}
-            {modelGroups.length === 0 && failures.length === 0 && <div className={K.modelEmpty}>{modelT('empty.models')}</div>}
+            {modelGroups.length === 0 && failures.length === 0 && <div className="dshp-scheduler__model-empty">{modelT('empty.models')}</div>}
           </>
         )}
         {pane === 'effort' && reasoning !== undefined && (
@@ -169,11 +171,11 @@ export function ModelPicker({
                 type="button"
                 role="menuitemradio"
                 aria-checked={reasoningEffort === 'none'}
-                className={K.modelOption}
+                className="dshp-scheduler__model-option"
                 onClick={() => selectEffort('none')}
               >
-                <span className={K.modelOptionCopy}><span className={K.modelName}>{modelT('effort.providerDefault')}</span></span>
-                <span className={K.modelCheck}>{reasoningEffort === 'none' && <IconCheckOutline16 />}</span>
+                <span className="dshp-scheduler__model-option-copy"><span className="dshp-scheduler__model-name">{modelT('effort.providerDefault')}</span></span>
+                <span className="dshp-scheduler__model-check">{reasoningEffort === 'none' && <Icon as={Check} />}</span>
               </button>
             )}
             {reasoning.efforts.map(item => (
@@ -182,17 +184,17 @@ export function ModelPicker({
                 type="button"
                 role="menuitemradio"
                 aria-checked={effectiveEffort === item.id}
-                className={K.modelOption}
+                className="dshp-scheduler__model-option"
                 onClick={() => selectEffort(item.id)}
               >
-                <span className={K.modelOptionCopy}>
-                  <span className={K.modelName}>{item.name}</span>
-                  {item.description !== undefined && <span className={K.modelDescription}>{item.description}</span>}
+                <span className="dshp-scheduler__model-option-copy">
+                  <span className="dshp-scheduler__model-name">{item.name}</span>
+                  {item.description !== undefined && <span className="dshp-scheduler__model-description">{item.description}</span>}
                 </span>
-                <span className={K.modelCheck}>{effectiveEffort === item.id && <IconCheckOutline16 />}</span>
+                <span className="dshp-scheduler__model-check">{effectiveEffort === item.id && <Icon as={Check} />}</span>
               </button>
             ))}
-            {reasoning.efforts.length === 0 && reasoning.defaultEffort !== undefined && <div className={K.modelEmpty}>{modelT('empty.efforts')}</div>}
+            {reasoning.efforts.length === 0 && reasoning.defaultEffort !== undefined && <div className="dshp-scheduler__model-empty">{modelT('empty.efforts')}</div>}
           </>
         )}
       </MenuPopup>

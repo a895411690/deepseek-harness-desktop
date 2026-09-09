@@ -4,7 +4,8 @@
  * 共享工具（供各插件 client 导入 `dsh-tauri/client`）：
  *   - compat / resolveStartSession：Alpha ↔ rc.2 服务布局适配；
  *   - store：框架无关 SnapshotStore（uSES 安全）；
- *   - http：ofetch 统一 JSON 客户端（requestJson / createJsonClient）；
+ *   - fetch：ofetch 统一 JSON 客户端（错误解析内置，唯一导出）；
+ *   - storage：unstorage createStorage / localStorageDriver；
  *   - controller：hookable 生命周期控制器（observer/timer/listener 收敛）；
  *   - CssRender：css-render 样式树（各插件 mount*Styles 使用）。
  */

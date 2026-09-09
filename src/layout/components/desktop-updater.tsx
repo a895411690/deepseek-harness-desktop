@@ -49,7 +49,7 @@ export function DesktopUpdater() {
         },
         variant: 'tertiary',
       },
-      timeout: 0,
+      timeout: 8000,
       placement: 'bottom end',
       description: t('update.desktop_new'),
       variant: 'default',

@@ -7,22 +7,22 @@
  */
 
 import type { ExtensionClientContext, Translate } from './types'
+import { mountStyle } from 'dsh-tauri-ui/client'
 import { compat } from 'dsh-tauri/client'
-import { createMcpInjected, createSkillsInjected } from './apis'
-import { LOCALE_NAMESPACE, PLUGIN_ID } from './constants'
-import { installExtensionLocale } from './locales'
-import { installExtensionPanel } from './register/extension-panel'
+import { LOCALE_NAMESPACE, PLUGIN_ID, STYLE_ID } from './constants'
+import { registerExtensionLocale } from './locales'
+import { registerExtensionPanel } from './register/extension-panel'
 import { registerSkillCreatorPrefill } from './register/skill-creator-prefill'
-import { mountExtensionStyles } from './styles'
+import extensionIndexStyle from './styles/index.cssr'
 
 export const name = PLUGIN_ID
 export const inject = ['slots', 'locale', 'sessions', 'workspaces']
 
 export function apply(ctx: ExtensionClientContext): void {
   const cx = compat(ctx)
-  installExtensionLocale(ctx)
-  ctx.effect(() => mountExtensionStyles(), `${PLUGIN_ID}: styles`)
+  registerExtensionLocale(ctx)
+  ctx.effect(() => mountStyle(extensionIndexStyle, STYLE_ID), `${PLUGIN_ID}: styles`)
   const t = ctx.locale.bind(LOCALE_NAMESPACE) as Translate
   registerSkillCreatorPrefill(ctx)
-  installExtensionPanel(cx as ExtensionClientContext, t, createSkillsInjected(), createMcpInjected())
+  registerExtensionPanel(cx as ExtensionClientContext, t)
 }

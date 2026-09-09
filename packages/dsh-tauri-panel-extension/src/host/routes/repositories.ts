@@ -7,13 +7,13 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { SkillRootEntry } from '../storage/index.ts'
+import type { SkillRootEntry } from '../service/skill-root'
 import type { RouteRegistrar } from '../types/index.ts'
 import { readJsonBody, sameOrigin, sendJson } from 'dsh-tauri'
 import { API_PREFIX } from '../../shared/constants.ts'
 import { addGitRepo, addLocalRepo, rootExists } from '../service/repos.ts'
 import { removeTree } from '../service/rmtree.ts'
-import { loadState, removeSkillRoot } from '../storage/index.ts'
+import { deleteSkillRoot, getSkillRoots } from '../service/skill-root'
 
 /** One registered repository plus a liveness flag (roots can go stale). */
 function toRootView(entry: SkillRootEntry): SkillRootEntry & { live: boolean } {
@@ -40,7 +40,7 @@ export function registerRepositoryRoutes(
         response.end()
         return
       }
-      sendJson(response, 200, { roots: loadState().skillRoots.map(toRootView) })
+      sendJson(response, 200, { roots: (await getSkillRoots()).map(toRootView) })
     },
   }))
 
@@ -102,7 +102,7 @@ export function registerRepositoryRoutes(
           sendJson(response, 400, { error: 'id is required' })
           return
         }
-        const removed = await removeSkillRoot(body.id)
+        const removed = await deleteSkillRoot(body.id)
         if (removed === undefined) {
           sendJson(response, 404, { error: 'repository not found' })
           return

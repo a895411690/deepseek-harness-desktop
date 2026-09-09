@@ -21,7 +21,7 @@
  * 创建/切换到 `dsh/<branch>` 分支，Agent 继续在本地仓库工作；主分支不受影响。
  */
 
-import { WORKTREE_API_PREFIX, WORKTREE_PLUGIN_NAME } from './shared/constants.js'
+import { WORKTREE_API_PREFIX, WORKTREE_PLUGIN_NAME } from './shared/constants'
 
 /** 插件名（诊断元数据，与导出的 name 一致）。 */
 export const name = WORKTREE_PLUGIN_NAME
@@ -39,11 +39,11 @@ export const inject = ['tools', 'systemPrompt', 'webServer', 'sessions', 'worksp
 /** API 路由前缀（客户端同源 fetch）。 */
 export const API_PREFIX = WORKTREE_API_PREFIX
 
-export { apply } from './host/apply.js'
-export { createWorktreeHooks } from './host/hooks/index.js'
-export type { WorktreeLifecycleHooks } from './host/hooks/index.js'
-export { buildRoutes } from './host/routes/index.js'
-export { checkoutToLocalAndHandback, completeWorktreeHandoff } from './host/service/handoff.js'
-export { computeHash, worktreeKey, worktreePath } from './host/service/operation.js'
-export { checkoutToLocal, discardWorktree, ensureWorktree } from './host/service/operation.js'
-export { createToolSet } from './host/tools/index.js'
+export { apply } from './host/apply'
+export { createWorktreeHooks } from './host/hooks'
+export type { WorktreeLifecycleHooks } from './host/hooks'
+export { buildRoutes } from './host/routes'
+export { checkoutToLocalAndHandback, completeWorktreeHandoff } from './host/service/handoff'
+export { computeHash, worktreeKey, worktreePath } from './host/service/operation'
+export { checkoutToLocal, discardWorktree, ensureWorktree } from './host/service/operation'
+export { createToolSet } from './host/tools'

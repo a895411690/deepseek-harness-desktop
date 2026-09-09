@@ -1,6 +1,6 @@
 [package]
 name = "deepseek-harness-desktop"
-version = "0.10.6"
+version = "0.11.1"
 description = "Desktop application for DeepSeek Harness (dsh)"
 authors = [ "deepseek-harness-desktop contributors" ]
 edition = "2021"
@@ -75,6 +75,12 @@ objc2-foundation = { version = "=0.3.2", default-features = false, features = [
   "NSObject",
   "NSProcessInfo",
 ] }
+# CGEventTap 直监听：绕开 rdev 0.5.3 在 macOS 上对 KeyPress 事件无条件调
+# TSMGetInputSourceProperty（必须 main queue）导致的 dispatch_assert_queue SIGTRAP。
+# 见 issue #397。core-graphics / core-foundation 在 rdev 传递依赖里已有，
+# 不引入新的下载源。
+core-graphics = "0.25"
+core-foundation = "0.9"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

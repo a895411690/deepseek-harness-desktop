@@ -16,7 +16,7 @@
  * 工具 execute 与 systemPrompt 渲染路径（小文件同步读可接受）。
  */
 
-import type { Binding, CheckoutContext } from '../types/index.js'
+import type { Binding, CheckoutContext } from '../types'
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { createAtomicFsStorage } from 'dsh-tauri'
 import { join } from 'pathe'
@@ -130,7 +130,8 @@ export async function loadBinding(worktreesRoot: string, sessionId: string): Pro
 
 /** 原子写某个会话的 binding（幂等：同会话重复写只覆盖自己的文件）。 */
 export async function saveBinding(worktreesRoot: string, sessionId: string, binding: Binding): Promise<void> {
-  await store(worktreesRoot).setItem(
+  const storage = store(worktreesRoot)
+  await storage.setItem(
     sessionFile(sessionId),
     `${JSON.stringify(binding, null, 2)}\n`,
   )
@@ -138,7 +139,8 @@ export async function saveBinding(worktreesRoot: string, sessionId: string, bind
 
 /** 删除某个会话的 binding（不存在时视为成功）。 */
 export async function removeBinding(worktreesRoot: string, sessionId: string): Promise<void> {
-  await store(worktreesRoot).removeItem(sessionFile(sessionId))
+  const storage = store(worktreesRoot)
+  await storage.removeItem(sessionFile(sessionId))
 }
 
 /** 同步枚举全部 binding（仅自愈/按 key 寻址等「需要全量」的路径使用）。 */
@@ -234,7 +236,8 @@ export function loadCheckoutContextSync(worktreesRoot: string, sessionId: string
 
 /** 写入某会话的一次性检出上下文（原子写，只碰自己的文件）。 */
 export async function setPendingCheckoutContext(worktreesRoot: string, sessionId: string, context: CheckoutContext): Promise<void> {
-  await store(worktreesRoot).setItem(
+  const storage = store(worktreesRoot)
+  await storage.setItem(
     checkoutContextFile(sessionId),
     `${JSON.stringify(context, null, 2)}\n`,
   )
@@ -242,5 +245,6 @@ export async function setPendingCheckoutContext(worktreesRoot: string, sessionId
 
 /** 清除某会话的一次性检出上下文（不存在时视为成功）。 */
 export async function clearPendingCheckoutContext(worktreesRoot: string, sessionId: string): Promise<void> {
-  await store(worktreesRoot).removeItem(checkoutContextFile(sessionId))
+  const storage = store(worktreesRoot)
+  await storage.removeItem(checkoutContextFile(sessionId))
 }

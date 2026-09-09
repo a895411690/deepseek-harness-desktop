@@ -7,6 +7,7 @@
 ## 功能
 
 - 按项目路径和会话 ID 创建稳定、可复用的隔离工作树。
+- 新建工作树自动把源仓库的依赖目录（默认 `node_modules`）链接进来，开箱即用；执行安装命令前自动断开链接，使安装在工作树内物化成一份独立依赖。
 - 注册 `create_worktree`、`checkout_worktree` 工具。
 - `create_worktree` / `checkout_worktree` 支持可选 `carry_staged` 参数（默认 `false`）：把已暂存（index）改动携带进新工作树、或携带回本地检出，避免暂存内容在隔离/移除工作树时丢失。
 - 提供创建、状态、检出和放弃 API：`/api/dsh-worktree/*`。
@@ -37,6 +38,25 @@ checkout_worktree({ worktree_hash_dirname: '[hash]/[dirname]', branch_name: 'dsh
   不使用仓库级共享的 `git stash`，避免跨 worktree 污染 stash 列表或覆盖目标目录无关改动。
 - 创建时始终以本地 `refs/heads/main` 为内容来源；若该分支不存在或无法解析，创建会在执行 worktree 操作前明确失败。
 - 创建时携带失败会回滚刚创建的工作树；检出时携带失败会回滚到检出前分支并保留工作树。
+
+## 依赖目录自动链接（安装后独立）
+
+`git worktree add` 只检出 tracked 文件，`node_modules` 等被 gitignore 的依赖目录不会跟随。
+每次都完整安装代价高，因此新建工作树时默认把**源仓库的依赖目录以目录联接挂进工作树**
+（Windows junction / POSIX 目录符号链接），工作树开箱即用。
+
+链接是共享的：包管理器若直接写入会穿透链接污染源仓库 —— pnpm 还会把源仓库的 workspace
+链接改写成指向工作树，工作树删除后留下一批悬空链接（
+[pnpm#14286](https://github.com/pnpm/pnpm/issues/14286)）。因此插件在 `tools/execute`
+钩子里检测到安装类命令（`pnpm/npm/yarn/bun install|add|ci…`、`pip/uv/poetry`、`cargo`、
+`go mod`、`bundle`、`composer` 等）时，会**先摘掉工作树内的链接**，让这次安装在
+工作树内物化成一份独立目录，源仓库不受影响。
+
+- 断开只删链接本身，绝不递归链接目标；已独立安装的真实目录原样保留。
+- 放弃/检出删除工作树前同样先断开链接，确保 `fs.rm` 不会进入源仓库。
+- 链接失败（权限/占用/跨卷）只记录日志，不阻断工作树创建；此时按提示自行安装即可。
+- 链接目录可配置：`linkDependencies`（默认 `true`）与 `linkDependencyDirectories`
+  （默认 `['node_modules']`）。
 
 ## 可靠删除（junction 安全）
 

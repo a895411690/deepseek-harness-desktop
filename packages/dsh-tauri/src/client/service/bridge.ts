@@ -55,9 +55,7 @@ export function setupNavBridge(handlers: NavBridgeHandlers): () => void {
 
   // 接管标记：置位后桌面端 NAV_SHIM_JS 的命令与事件都让位（卸载时随控制器复位）。
   window.__dsh_tauri_bridge__ = true
-  controller.add(() => {
-    delete window.__dsh_tauri_bridge__
-  })
+  controller.add(() => delete window.__dsh_tauri_bridge__)
 
   function post(message: Record<string, unknown>): void {
     try {

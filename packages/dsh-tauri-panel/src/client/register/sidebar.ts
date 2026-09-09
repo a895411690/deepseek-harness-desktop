@@ -1,4 +1,3 @@
-import type { Context } from '@deepseek-ai/cordis'
 import type { ClientContext, WorkspaceId } from 'dsh-tauri/client'
 import { resolveStartSession } from 'dsh-tauri/client'
 import { SidebarRootClone } from '../components/sidebar'
@@ -13,7 +12,7 @@ import { NS } from '../locales'
  * sidebar.panel.action 协议槽。
  * @param ctx - 客户端根上下文。
  */
-export function installSidebarRoot(ctx: Context): void {
+export function registerSidebarRoot(ctx: ClientContext): void {
   ctx.slots.inject('sidebar' as never, () =>
     ctx.slots.register(
       {
@@ -26,7 +25,7 @@ export function installSidebarRoot(ctx: Context): void {
         },
         inject: () => ({
           startSession: (workspaceId?: WorkspaceId) => {
-            const start = resolveStartSession(ctx as ClientContext)
+            const start = resolveStartSession(ctx)
             if (start === undefined) {
               console.error('[dsh-tauri-panel] new session unavailable: no workspace navigation service')
               return

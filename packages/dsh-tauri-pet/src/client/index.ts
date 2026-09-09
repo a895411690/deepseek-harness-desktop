@@ -3,7 +3,7 @@
  *
  * 能力（零结构改壳、零新增运行时依赖）：
  *   - 侧栏入口：DOM 补丁把一个官方 `.rtSEdW_iconButton` 样式的切换按钮插到
- *     dsh-tauri-ui 设置触发器（`.dsh-tu-settingsTrigger`）右侧、同一容器内
+ *     dsh-tauri-ui 设置触发器（`.dshp-settings-trigger`）右侧、同一容器内
  *     （`.sidebar.settings` 的子元素）。按钮只有激活/未激活两态（激活时右上角
  *     绿色小圆点），点击即切换桌宠启用状态，不弹面板。
  *   - 设置分区：注册进 `settings.section` 槽（与归档分区同点位），提供启用
@@ -15,11 +15,11 @@
  * dsh-tauri/client。
  */
 import type { ClientContext } from 'dsh-tauri/client'
+import { mountStyle } from 'dsh-tauri-ui/client'
 import { PET_CLIENT_PLUGIN, PET_STYLES_EFFECT } from './constants'
-import { installLocale } from './locales'
-import { installPetIconPatch, registerPetPrefill, registerPetSection } from './register/pet'
-import { installPetSessionForwarder } from './service/activity'
-import { mountPetStyles } from './styles'
+import { registerLocale } from './locales'
+import { registerPetIconPatch, registerPetPrefill, registerPetSection } from './register/pet'
+import petEntryStyle from './styles/index.cssr'
 
 /** 插件显示名（诊断元数据）。 */
 export const name = PET_CLIENT_PLUGIN
@@ -32,12 +32,11 @@ export const inject = ['slots', 'locale', 'sessions', 'workspaces']
  * @param ctx - 客户端根上下文（须已注入 slots/locale）。
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => mountPetStyles(), PET_STYLES_EFFECT)
+  ctx.effect(() => mountStyle(petEntryStyle, `${PET_CLIENT_PLUGIN}-styles`), PET_STYLES_EFFECT)
 
-  installLocale(ctx)
+  registerLocale(ctx)
 
   registerPetSection(ctx)
-  installPetIconPatch(ctx)
+  registerPetIconPatch(ctx)
   registerPetPrefill(ctx)
-  installPetSessionForwarder(ctx)
 }

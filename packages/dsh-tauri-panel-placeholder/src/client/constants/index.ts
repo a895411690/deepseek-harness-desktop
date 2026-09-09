@@ -7,5 +7,5 @@ export const PANEL_PROTOCOL_NAME = 'panel.protocol'
 export const PANEL_ORDER = 10
 export const PANEL_PRIORITY = 0
 export const STYLE_ID = 'dsh-tauri-panel-placeholder-styles'
-export const PLACEHOLDER_CENTER_CLASS = 'dshp-placeholderCenter'
-export const PLACEHOLDER_TEXT_CLASS = 'dshp-placeholderText'
+export const PLACEHOLDER_CENTER_CLASS = 'dshp-placeholder__center'
+export const PLACEHOLDER_TEXT_CLASS = 'dshp-placeholder__text'

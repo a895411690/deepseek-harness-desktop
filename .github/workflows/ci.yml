@@ -56,6 +56,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 插件 client 类型经 workspace 包的 exports 指向构建产物（dist/client.d.cts），
+      # typecheck/lint 前先构建两个核心共享包，否则全新检出会报
+      # "Cannot find module 'dsh-tauri/client'"。
+      - name: Build core packages
+        run: pnpm --filter dsh-tauri build && pnpm --filter dsh-tauri-ui build
+
       - name: Type check
         run: pnpm run typecheck
 

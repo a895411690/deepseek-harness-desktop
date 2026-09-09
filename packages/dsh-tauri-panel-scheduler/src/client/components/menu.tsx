@@ -7,10 +7,12 @@
  * 状态修饰符（is-open / is-up / is-end / is-float / is-kv / is-on）保留字面量。
  */
 
-import type { CSSProperties, JSX, ReactNode, RefObject } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
+import { useMountStyle } from 'dsh-tauri-ui/client'
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { SCHEDULER_CLASSES as K } from '../constants'
+import { MENU_STYLE_ID } from '../constants'
+import menuStyle from './menu.cssr'
 
 export interface MenuOption<T extends string> {
   readonly value: T
@@ -84,7 +86,7 @@ export function MenuPopup({
   readonly ariaLabel?: string
   readonly children: ReactNode
   readonly onClick?: () => void
-}): JSX.Element | null {
+}) {
   const host = useContext(MenuHostContext)
   const [style, setStyle] = useState<CSSProperties>({})
 
@@ -110,7 +112,7 @@ export function MenuPopup({
   const node = (
     <div
       ref={menuRef}
-      className={`${className}${host !== null ? ` ${K.menuFloat}` : ''}`}
+      className={`${className}${host !== null ? ` ${'dshp-scheduler__menu-float'}` : ''}`}
       role="menu"
       aria-label={ariaLabel}
       style={host !== null ? style : undefined}
@@ -135,7 +137,8 @@ export function MenuHostProvider({
 }: {
   readonly host: HTMLElement | null
   readonly children: ReactNode
-}): JSX.Element {
+}) {
+  useMountStyle(menuStyle, MENU_STYLE_ID)
   return <MenuHostContext.Provider value={host}>{children}</MenuHostContext.Provider>
 }
 
@@ -155,17 +158,17 @@ export function MenuRow({
   readonly chevron?: boolean
   readonly kv?: boolean
   readonly onClick: () => void
-}): JSX.Element {
+}) {
   return (
-    <button type="button" className={`${K.menuRow}${active === true ? ' is-on' : ''}${kv === true ? ' is-kv' : ''}`} onClick={onClick}>
-      <span className={K.menuRowMain}>
+    <button type="button" className={`${'dshp-scheduler__menu-row'}${active === true ? ' is-on' : ''}${kv === true ? ' is-kv' : ''}`} onClick={onClick}>
+      <span className="dshp-scheduler__menu-row-main">
         {icon}
         <span>{label}</span>
       </span>
-      <span className={K.menuRowSide}>
+      <span className="dshp-scheduler__menu-row-side">
         {hint}
-        {active === true && chevron !== true && <i className={K.menuTick} />}
-        {chevron === true && <i className={K.menuNext} />}
+        {active === true && chevron !== true && <i className="dshp-scheduler__menu-tick" />}
+        {chevron === true && <i className="dshp-scheduler__menu-next" />}
       </span>
     </button>
   )
@@ -187,14 +190,14 @@ export function MenuSelect<T extends string>({
   readonly pill?: boolean
   readonly up?: boolean
   readonly icon?: ReactNode
-}): JSX.Element {
+}) {
   const menu = useMenuOpen()
   const current = options.find(item => item.value === value)?.label ?? value
   return (
-    <div className={`${K.menuSelect}${wide === true ? ' is-wide' : ''}${pill === true ? ' is-pill' : ''}${menu.open ? ' is-open' : ''}`} ref={menu.root}>
+    <div className={`${'dshp-scheduler__menu-select'}${wide === true ? ' is-wide' : ''}${pill === true ? ' is-pill' : ''}${menu.open ? ' is-open' : ''}`} ref={menu.root}>
       <button
         type="button"
-        className={K.menuSelectBtn}
+        className="dshp-scheduler__menu-select-btn"
         onMouseDown={event => event.stopPropagation()}
         onClick={() => menu.setOpen(value => !value)}
       >
@@ -208,7 +211,7 @@ export function MenuSelect<T extends string>({
         menuRef={menu.menu}
         up={up}
         end={up}
-        className={`${K.menuSelectMenu}${pill === true ? ' is-composer' : ''}${up === true ? ' is-up' : ''}${up === true ? ' is-end' : ''}`}
+        className={`${'dshp-scheduler__menu-select-menu'}${pill === true ? ' is-composer' : ''}${up === true ? ' is-up' : ''}${up === true ? ' is-end' : ''}`}
       >
         {options.map(item => (
           <MenuRow
@@ -239,13 +242,13 @@ export function MenuPanel({
   readonly ghost?: boolean
   readonly up?: boolean
   readonly persist?: boolean
-}): JSX.Element {
+}) {
   const menu = useMenuOpen()
   return (
-    <div className={`${K.menuSelect}${ghost === true ? ' is-pill' : ''}${menu.open ? ' is-open' : ''}`} ref={menu.root}>
+    <div className={`${'dshp-scheduler__menu-select'}${ghost === true ? ' is-pill' : ''}${menu.open ? ' is-open' : ''}`} ref={menu.root}>
       <button
         type="button"
-        className={K.chipBtn}
+        className="dshp-scheduler__chip-btn"
         onMouseDown={event => event.stopPropagation()}
         onClick={() => menu.setOpen(value => !value)}
       >
@@ -257,7 +260,7 @@ export function MenuPanel({
         anchor={menu.root}
         menuRef={menu.menu}
         up={up}
-        className={`${K.menuSelectMenu} is-composer${up === true ? ' is-up' : ''}`}
+        className={`${'dshp-scheduler__menu-select-menu'} is-composer${up === true ? ' is-up' : ''}`}
         onClick={() => {
           if (persist !== true)
             menu.setOpen(false)

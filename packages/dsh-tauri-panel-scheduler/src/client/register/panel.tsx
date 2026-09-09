@@ -8,7 +8,7 @@
 import type { ClientContext } from 'dsh-tauri/client'
 import type { ReactElement } from 'react'
 import type { PanelProtocol, Translate } from '../types'
-import { IconSchedule } from '../components/icons'
+import { Calendar, Icon } from 'dsh-tauri-ui/client'
 import { SchedulerPanel } from '../components/scheduler-panel'
 import {
   LOCALE_NAMESPACE,
@@ -22,9 +22,9 @@ import {
   PROTOCOL_RETRY_MS,
 } from '../constants'
 import { setChatPrefill } from '../prefill'
-import { hydrateScheduler } from '../store'
+import { hydrateScheduler } from '../service/scheduler'
 
-export function installSchedulerPanel(ctx: ClientContext, t: Translate): void {
+export function registerSchedulerPanel(ctx: ClientContext, t: Translate): void {
   ctx.slots.inject(PANEL_SLOT_NAME as never, () => {
     let registration: (() => void) | undefined
     let retryTimer: number | undefined
@@ -45,7 +45,7 @@ export function installSchedulerPanel(ctx: ClientContext, t: Translate): void {
           }}
         />
       )
-      const Action = (): ReactElement => <protocol.ActionItem id={PANEL_ID} icon={<IconSchedule />} onClick={() => protocol.renderPanelContent?.({ id: PANEL_ID, render: Content, locale: LOCALE_NAMESPACE })}>{t('scheduler')}</protocol.ActionItem>
+      const Action = (): ReactElement => <protocol.ActionItem id={PANEL_ID} icon={<Icon as={Calendar} />} onClick={() => protocol.renderPanelContent?.({ id: PANEL_ID, render: Content, locale: LOCALE_NAMESPACE })}>{t('scheduler')}</protocol.ActionItem>
       registration = ctx.slots.register({ name: PANEL_SLOT_NAME, id: PANEL_ACTION_ID, registrant: PLUGIN_ID, order: PANEL_ACTION_ORDER, priority: PANEL_ACTION_PRIORITY, locale: LOCALE_NAMESPACE, inject: () => ({}) } as never, Action)
       if (retryTimer !== undefined) {
         window.clearInterval(retryTimer)

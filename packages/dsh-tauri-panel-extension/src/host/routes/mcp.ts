@@ -6,16 +6,17 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { McpInput } from '../service/mcp.ts'
+import type { McpInput, McpScope } from '../service/mcp.ts'
 import type { RouteRegistrar } from '../types/index.ts'
 import { readJsonBody, sameOrigin, sendJson } from 'dsh-tauri'
 import { API_PREFIX } from '../../shared/constants.ts'
 import { scanAllMcp } from '../service/agents.ts'
-import { listMcp, removeMcp, setMcpDisabled, upsertMcp, validateMcpInput } from '../service/mcp.ts'
+import { checkMcpRow, listMcp, listMcpScoped, mcpRowToInput, mcpScopeDir, removeMcp, setMcpDisabled, upsertMcp, validateMcpInput } from '../service/mcp.ts'
 
 /** MCP route module 的配置片：profile patch 目录。 */
 export interface McpRoutesConfig {
   profileDirPath: string
+  dshHomePath: string
 }
 
 export function registerMcpRoutes(
@@ -23,6 +24,8 @@ export function registerMcpRoutes(
   config: McpRoutesConfig,
 ): Array<() => void> {
   const disposers: Array<() => void> = []
+  const readScope = (value: unknown): McpScope => value === 'global' ? 'global' : 'profile'
+  const scopeDir = (value: unknown): string => mcpScopeDir(readScope(value), config.profileDirPath, config.dshHomePath)
 
   disposers.push(register({
     kind: 'exact',
@@ -33,7 +36,8 @@ export function registerMcpRoutes(
         response.end()
         return
       }
-      sendJson(response, 200, { servers: listMcp(config.profileDirPath), restartNeeded: true })
+      const listing = listMcpScoped(config.profileDirPath, config.dshHomePath)
+      sendJson(response, 200, { ...listing, restartNeeded: true })
     },
   }))
 
@@ -51,13 +55,13 @@ export function registerMcpRoutes(
         return
       }
       try {
-        const input = (await readJsonBody(request)) as McpInput
+        const input = (await readJsonBody(request)) as McpInput & { scope?: unknown }
         const invalid = validateMcpInput(input)
         if (invalid !== null) {
           sendJson(response, 400, { error: invalid })
           return
         }
-        const id = upsertMcp(config.profileDirPath, input)
+        const id = upsertMcp(scopeDir(input.scope), input)
         sendJson(response, 200, { ok: true, id, restartNeeded: true })
       }
       catch (error) {
@@ -80,12 +84,12 @@ export function registerMcpRoutes(
         return
       }
       try {
-        const body = (await readJsonBody(request)) as { id?: unknown, disabled?: unknown }
+        const body = (await readJsonBody(request)) as { id?: unknown, disabled?: unknown, scope?: unknown }
         if (typeof body.id !== 'string' || typeof body.disabled !== 'boolean') {
           sendJson(response, 400, { error: 'id and disabled are required' })
           return
         }
-        const ok = setMcpDisabled(config.profileDirPath, body.id, body.disabled)
+        const ok = setMcpDisabled(scopeDir(body.scope), body.id, body.disabled)
         sendJson(response, ok ? 200 : 404, ok ? { ok: true, restartNeeded: true } : { error: 'server row not found' })
       }
       catch (error) {
@@ -108,12 +112,12 @@ export function registerMcpRoutes(
         return
       }
       try {
-        const body = (await readJsonBody(request)) as { id?: unknown }
+        const body = (await readJsonBody(request)) as { id?: unknown, scope?: unknown }
         if (typeof body.id !== 'string') {
           sendJson(response, 400, { error: 'id is required' })
           return
         }
-        const ok = removeMcp(config.profileDirPath, body.id)
+        const ok = removeMcp(scopeDir(body.scope), body.id)
         sendJson(response, ok ? 200 : 404, ok ? { ok: true, restartNeeded: true } : { error: 'server row not found' })
       }
       catch (error) {
@@ -135,7 +139,7 @@ export function registerMcpRoutes(
         sendJson(response, 200, {
           servers: scanAllMcp(),
           // Profile serverNames, so the browser can grey out existing ones.
-          existing: listMcp(config.profileDirPath).map(row => row.serverName),
+          existing: listMcpScoped(config.profileDirPath, config.dshHomePath).servers.map(row => row.serverName),
         })
       }
       catch (error) {
@@ -158,7 +162,7 @@ export function registerMcpRoutes(
         return
       }
       try {
-        const body = (await readJsonBody(request)) as { items?: unknown }
+        const body = (await readJsonBody(request)) as { items?: unknown, scope?: unknown }
         const wanted = new Set(
           (Array.isArray(body.items) ? body.items : [])
             .filter((item): item is { agent: string, name: string } =>
@@ -169,7 +173,7 @@ export function registerMcpRoutes(
         for (const server of scanAllMcp()) {
           if (!wanted.has(`${server.agent}/${server.name}`))
             continue
-          const existing = listMcp(config.profileDirPath).some(row => row.serverName === server.name)
+          const existing = listMcpScoped(config.profileDirPath, config.dshHomePath).servers.some(row => row.serverName === server.name)
           if (existing) {
             results.push({ name: server.name, ok: false, error: 'already in profile' })
             continue
@@ -187,7 +191,7 @@ export function registerMcpRoutes(
             results.push({ name: server.name, ok: false, error: invalid })
             continue
           }
-          upsertMcp(config.profileDirPath, input)
+          upsertMcp(scopeDir(body.scope), input)
           results.push({ name: server.name, ok: true })
         }
         sendJson(response, 200, { ok: results.every(item => item.ok), results, restartNeeded: true })
@@ -198,5 +202,65 @@ export function registerMcpRoutes(
     },
   }))
 
+  disposers.push(register({
+    kind: 'exact',
+    path: `${API_PREFIX}/mcp/check`,
+    handler: async (request: IncomingMessage, response: ServerResponse) => {
+      if (request.method !== 'POST') {
+        response.writeHead(405, { allow: 'POST' })
+        response.end()
+        return
+      }
+      if (!sameOrigin(request)) {
+        sendJson(response, 403, { error: 'untrusted origin' })
+        return
+      }
+      try {
+        const body = (await readJsonBody(request)) as { id?: unknown, scope?: unknown }
+        if (typeof body.id !== 'string') {
+          sendJson(response, 400, { error: 'id is required' })
+          return
+        }
+        const row = listMcp(scopeDir(body.scope)).find(item => item.id === body.id)
+        if (row === undefined) {
+          sendJson(response, 404, { error: 'server row not found' })
+          return
+        }
+        sendJson(response, 200, await checkMcpRow(row))
+      }
+      catch (error) { sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) }) }
+    },
+  }))
+  disposers.push(register({
+    kind: 'exact',
+    path: `${API_PREFIX}/mcp/copy`,
+    handler: async (request: IncomingMessage, response: ServerResponse) => {
+      if (request.method !== 'POST') {
+        response.writeHead(405, { allow: 'POST' })
+        response.end()
+        return
+      }
+      if (!sameOrigin(request)) {
+        sendJson(response, 403, { error: 'untrusted origin' })
+        return
+      }
+      try {
+        const body = (await readJsonBody(request)) as { id?: unknown, scope?: unknown, toScope?: unknown }
+        if (typeof body.id !== 'string') {
+          sendJson(response, 400, { error: 'id is required' })
+          return
+        }
+        const source = listMcp(scopeDir(body.scope)).find(item => item.id === body.id)
+        if (source === undefined) {
+          sendJson(response, 404, { error: 'server row not found' })
+          return
+        }
+        const scope = readScope(body.toScope)
+        const id = upsertMcp(mcpScopeDir(scope, config.profileDirPath, config.dshHomePath), mcpRowToInput(source))
+        sendJson(response, 200, { ok: true, id, scope, restartNeeded: true })
+      }
+      catch (error) { sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) }) }
+    },
+  }))
   return disposers
 }

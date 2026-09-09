@@ -1,17 +1,15 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
+    "target": "ES2022",
     "jsx": "react-jsx",
-    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "useDefineForClassFields": true,
     "baseUrl": ".",
     "module": "ESNext",
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "paths": {
-      "@/*": ["src/*"]
-    },
+    "paths": { "@/*": ["src/*"] },
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
 
@@ -25,5 +23,5 @@
     "skipLibCheck": true
   },
   "references": [{ "path": "./tsconfig.node.json" }],
-  "include": ["src"]
+  "include": ["src", "packages/*/src", "types"]
 }

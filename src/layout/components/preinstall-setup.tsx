@@ -50,13 +50,11 @@ function PluginRow({ plugin, checked, toUninstall, disabled, onToggle, onOpenRep
 }) {
   const { t } = useTranslation()
 
-
-
   return (
     <Item
       left={(
         <>
-          <Label className={`min-w-0 truncate text-sm font-medium`}>
+          <Label className="min-w-0 truncate text-sm font-medium">
             {plugin.name}
           </Label>
           <If cond={plugin.recommended && !plugin.installed && !toUninstall}>

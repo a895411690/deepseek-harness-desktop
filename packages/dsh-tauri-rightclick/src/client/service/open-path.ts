@@ -1,5 +1,4 @@
-import { requestJson } from 'dsh-tauri/client'
-import { OPEN_PATH_ROUTE } from '../constants'
+import { postOpenPath } from '../apis'
 import { text } from '../locales'
 
 /**
@@ -9,10 +8,7 @@ import { text } from '../locales'
  * 包装——目录不会被侧边栏编辑器当文件打开（`xxx is a directory`）。
  */
 export async function openInExplorer(path: string): Promise<void> {
-  const result = await requestJson<{ ok?: boolean, error?: string }>(OPEN_PATH_ROUTE, '', {
-    method: 'POST',
-    body: JSON.stringify({ path }),
-  })
+  const result = await postOpenPath({ path })
   if (!result?.ok)
     throw new Error(text('openFailed', { reason: result?.error || text('unknownError') }))
 }

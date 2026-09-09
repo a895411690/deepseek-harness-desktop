@@ -5,7 +5,7 @@
  * 共用的线协议形状：client 侧另有视图投影（client/types/），本文件保持纯数据模型。
  */
 
-import type { SCHEDULE_KINDS, WEEKDAYS } from '../../shared/constants.js'
+import type { SCHEDULE_KINDS, WEEKDAYS } from '../../shared/constants'
 
 /** 宿主根上下文（Cordis 注入能力；插件侧以 any 消费，类型由 dsh 生态 declare module 增强）。 */
 export type HostContext = any
@@ -16,11 +16,25 @@ export interface PluginConfig {
   tickMs?: number
 }
 
-/** 计划类型（每天/间隔/工作日/每周）。 */
+/** 计划类型（含一次、小时、月度与自定义周期）。 */
 export type ScheduleKind = (typeof SCHEDULE_KINDS)[number]
 
 /** 星期枚举（IATA 三字母）。 */
 export type Weekday = (typeof WEEKDAYS)[number]
+
+/** 单次：at 为 ISO 时间，timeZone 为展示/语义时区。 */
+export interface OnceSchedule {
+  kind: 'once'
+  at: string
+  timeZone: string
+}
+
+/** 每小时：minute 为 0-59。 */
+export interface HourlySchedule {
+  kind: 'hourly'
+  minute: number
+  timeZone: string
+}
 
 /** 每天：`time` 为 "HH:mm"（timeZone 时区）。 */
 export interface DailySchedule {
@@ -33,6 +47,7 @@ export interface DailySchedule {
 export interface IntervalSchedule {
   kind: 'interval'
   everyMinutes: number
+  anchor?: string
   timeZone: string
 }
 
@@ -51,14 +66,31 @@ export interface WeeklySchedule {
   timeZone: string
 }
 
+/** 每月：day 为 1-31，超出月份天数时按 cron 语义跳过。 */
+export interface MonthlySchedule {
+  kind: 'monthly'
+  day: number
+  time: string
+  timeZone: string
+}
+
+/** 自定义：每 everyDays 天，从 anchor 起固定推进。 */
+export interface CustomSchedule {
+  kind: 'custom'
+  everyDays: number
+  anchor: string
+  time: string
+  timeZone: string
+}
+
 /** 调度计划（discriminated union）。 */
-export type SchedulerSchedule = DailySchedule | IntervalSchedule | WorkdaysSchedule | WeeklySchedule
+export type SchedulerSchedule = OnceSchedule | HourlySchedule | DailySchedule | IntervalSchedule | WorkdaysSchedule | WeeklySchedule | MonthlySchedule | CustomSchedule
 
 /** 任务执行来源。 */
 export type RunTrigger = 'schedule' | 'manual'
 
 /** 任务状态。 */
-export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled'
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'interrupted' | 'skipped' | 'cancelled'
 
 /** 定时任务定义（持久化于 tasks.json）。 */
 export interface SchedulerTask {

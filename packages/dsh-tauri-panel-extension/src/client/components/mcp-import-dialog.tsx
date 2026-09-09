@@ -7,7 +7,10 @@
 import type { ReactElement } from 'react'
 import type { McpImportItem, Translate } from '../types'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useMountStyle } from 'dsh-tauri-ui/client'
+import { MCP_IMPORT_DIALOG_STYLE_ID } from '../constants'
 import { importGroups } from '../utils/mcp'
+import mcpImportDialogStyle from './mcp-import-dialog.cssr'
 
 export interface McpImportDialogProps {
   t: Translate
@@ -22,6 +25,7 @@ export interface McpImportDialogProps {
 }
 
 export function McpImportDialog(props: McpImportDialogProps): ReactElement {
+  useMountStyle(mcpImportDialogStyle, MCP_IMPORT_DIALOG_STYLE_ID)
   const { t, open, items, busy, formError, onClose, onToggle, onToggleGroup, onImport } = props
   return (
     <Modal
@@ -29,14 +33,14 @@ export function McpImportDialog(props: McpImportDialogProps): ReactElement {
       onClose={onClose}
       closeLabel={t('close')}
       title={t('importServers')}
-      className="dpte-modalWide"
+      className="dshp-extension dshp-extension__modal-wide"
     >
-      <div className="dpte-form">
-        <p className="dpte-intro">{t('importIntro')}</p>
-        {items === null && <p className="dpte-empty">{t('loading')}</p>}
-        {items !== null && items.length === 0 && <p className="dpte-empty">{t('importEmpty')}</p>}
+      <div className="dshp-extension__form">
+        <p className="dshp-extension__intro">{t('importIntro')}</p>
+        {items === null && <p className="dshp-extension__empty">{t('loading')}</p>}
+        {items !== null && items.length === 0 && <p className="dshp-extension__empty">{t('importEmpty')}</p>}
         {items !== null && items.length > 0 && (
-          <div className="dpte-importScroll">
+          <div className="dshp-extension__import-scroll">
             {importGroups(items).map((group) => {
               const selectable = group.items
                 .filter(({ item }) => !item.existing)
@@ -44,12 +48,12 @@ export function McpImportDialog(props: McpImportDialogProps): ReactElement {
               const allChecked = selectable.length > 0
                 && selectable.every(index => items[index].checked)
               return (
-                <section className="dpte-importGroup" key={group.agent}>
-                  <div className="dpte-importHead">
-                    <span className="dpte-tag" data-kind="source">{group.label}</span>
-                    <span className="dpte-importCount">{group.items.length}</span>
+                <section className="dshp-extension__import-group" key={group.agent}>
+                  <div className="dshp-extension__import-head">
+                    <span className="dshp-extension__tag" data-kind="source">{group.label}</span>
+                    <span className="dshp-extension__import-count">{group.items.length}</span>
                     {selectable.length > 0 && (
-                      <label className="dpte-importAll">
+                      <label className="dshp-extension__import-all">
                         <input
                           type="checkbox"
                           checked={allChecked}
@@ -59,27 +63,27 @@ export function McpImportDialog(props: McpImportDialogProps): ReactElement {
                       </label>
                     )}
                   </div>
-                  <ul className="dpte-cards dpte-cardsSingle">
+                  <ul className="dshp-extension__cards dshp-extension__cards--single">
                     {group.items.map(({ item, index }) => {
                       const command = item.server.transport === 'stdio'
                         ? `${item.server.command ?? ''} ${(item.server.args ?? []).join(' ')}`.trim()
                         : item.server.url ?? ''
                       return (
-                        <li className={`dpte-card${item.existing ? ' dpte-cardMuted' : ''}`} key={`${item.server.agent}/${item.server.name}`}>
-                          <div className="dpte-cardTop">
-                            <label className={`dpte-importChoice${item.existing ? ' dpte-importChoiceDisabled' : ''}`}>
+                        <li className={`dshp-extension__card${item.existing ? ' dshp-extension__card--muted' : ''}`} key={`${item.server.agent}/${item.server.name}`}>
+                          <div className="dshp-extension__card-top">
+                            <label className={`dshp-extension__import-choice${item.existing ? ' dshp-extension__import-choice--disabled' : ''}`}>
                               <input
                                 type="checkbox"
                                 checked={item.checked}
                                 disabled={item.existing}
                                 onChange={event => onToggle(index, event.target.checked)}
                               />
-                              <strong className="dpte-cardTitle" title={item.server.name}>{item.server.name}</strong>
+                              <strong className="dshp-extension__card-title" title={item.server.name}>{item.server.name}</strong>
                             </label>
-                            <span className="dpte-tag">{item.server.transport}</span>
-                            {item.existing && <span className="dpte-tag">{t('importExisting')}</span>}
+                            <span className="dshp-extension__tag">{item.server.transport}</span>
+                            {item.existing && <span className="dshp-extension__tag">{t('importExisting')}</span>}
                           </div>
-                          <p className="dpte-cardDesc" title={command}>{command}</p>
+                          <p className="dshp-extension__card-desc" title={command}>{command}</p>
                         </li>
                       )
                     })}
@@ -89,9 +93,9 @@ export function McpImportDialog(props: McpImportDialogProps): ReactElement {
             })}
           </div>
         )}
-        {formError !== null && <p className="dpte-formError">{formError}</p>}
-        <div className="dpte-cardRow">
-          <span className="dpte-spacer" />
+        {formError !== null && <p className="dshp-extension__form-error">{formError}</p>}
+        <div className="dshp-extension__card-row">
+          <span className="dshp-extension__spacer" />
           <Button variant="ghost" onClick={onClose}>{t('cancel')}</Button>
           <Button
             variant="primary"

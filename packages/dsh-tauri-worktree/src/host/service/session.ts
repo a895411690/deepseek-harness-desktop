@@ -9,7 +9,7 @@
  *     误判 isGit: false，客户端会永久隐藏工作树模式选择器，直到刷新后才纠正。
  */
 
-import type { HostContext } from '../types/index.js'
+import type { HostContext } from '../types'
 import { isAbsolute } from 'pathe'
 
 /**

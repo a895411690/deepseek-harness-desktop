@@ -17,17 +17,16 @@
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-agent-presets'
-import type { ToolExecution } from '@deepseek-ai/dsh-tools'
-import type { HostContext, RunTrigger, SchedulerTask } from '../types/index.js'
-import type { PermissionPresetService } from './permission-presets.js'
+import type { HostContext, RunTrigger, SchedulerTask } from '../types'
+import type { PermissionPresetService } from './permission-presets'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import process from 'node:process'
 import { join } from 'pathe'
-import { RUNS_HISTORY_LIMIT } from '../constants/index.js'
-import { loadState, saveRuns, withStateLock } from '../storage/index.js'
-import { schedulerSessionTitle } from './run-title.js'
+import { createRun, updateRun } from './run'
+
+import { schedulerSessionTitle } from './run-title'
 
 /** 单次执行结果（scheduler.ts / 路由消费）。 */
 export interface ExecuteOutcome {
@@ -64,6 +63,10 @@ interface SessionEventLike {
   readonly data: Record<string, any>
 }
 
+/*
+ * Permission is intentionally delegated to the host preset. The scheduler must not
+ * maintain a second, stale tool allowlist: new DSH tools should work automatically.
+ */
 /**
  * 无人值守工具白名单（对齐 MichengAI unattendedToolGuardReason，并按 dsh 0.1.0-rc.x
  * standard 预设的实际模型工具目录补齐安全类别）。该列表只限制无人值守可调用的工具
@@ -77,58 +80,13 @@ interface SessionEventLike {
  *    perpetuation 循环；
  *  - MCP 等动态注册工具：静态白名单无法逐一核验，保持拒绝。
  */
-const UNATTENDED_TOOL_ALLOWLIST = new Set([
-  // shell / 进程（run_in_background 由 guard 单独拦截）
-  'run_code',
-  'bash',
-  'pwsh',
-  // 文件系统与检索
-  'read',
-  'read_image',
-  'write',
-  'edit',
-  'str_replace_editor',
-  'glob',
-  'grep',
-  'lsp',
-  // web
-  'web_search',
-  'web_fetch',
-  // 技能
-  'skill',
-  // 会话/事件检索（较新核心注册，前向兼容）
-  'session_search',
-  'session_trace',
-  'session_event_read',
-  'session_event_search',
-  'session_event_trace',
-  // 会话内簿记：任务清单（session log 投影，要求 owning agent session，无宿主副作用）
-  'todo_write',
-  // 目标延续：长任务的多轮自主推进（dsh-tool-goal，会话内 goal 状态）
-  'get_goal',
-  'create_goal',
-  'update_goal',
-  // 后台任务收集/停止（agent 级 job 注册表按 owning agent 隔离）
-  'job_list',
-  'job_output',
-  'job_kill',
-  // 子代理委派与编排（agent 级，受运行超时/取消约束，非 OS 后台进程）
-  'list_subagent_models',
-  'subagent',
-  'subagent_fork',
-  'send_message',
-  'list_agents',
-  'interrupt_agent',
-  'workflow',
-  'ralph',
-  // cordis 预设任务的组合管理（agentPreset 可选 cordis）
-  'cordis_define',
-  'cordis_run',
-  'cordis_stop',
-  'cordis_undefine',
-])
 
 const CANCEL_CONVERGENCE_TIMEOUT_MS = 10_000
+
+/** @deprecated Permission policy is host-owned; retained as a no-op compatibility export. */
+export function unattendedToolGuardReason(_name: string, _args: unknown): undefined {
+  return undefined
+}
 
 /**
  * 从平台 loader 加载 DSH-owned 核心模块。内置插件位于独立 resources/node_modules，
@@ -178,20 +136,6 @@ export function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Pro
       () => { clearTimeout(timer); resolve(false) },
     )
   })
-}
-
-/** 无人值守工具白名单拦截（对齐 MichengAI unattendedToolGuardReason）。 */
-export function unattendedToolGuardReason(name: string, args: unknown): string | undefined {
-  if (
-    (name === 'bash' || name === 'pwsh')
-    && typeof args === 'object' && args !== null
-    && (args as Record<string, unknown>).run_in_background === true
-  ) {
-    return '无人值守运行不允许启动后台进程。'
-  }
-  return UNATTENDED_TOOL_ALLOWLIST.has(name)
-    ? undefined
-    : `工具 '${name}' 不在无人值守自动化允许列表中。`
 }
 
 /** 先应用官方预设的完整语义，再让无人值守审批 fail-closed（对齐 MichengAI）。 */
@@ -244,35 +188,24 @@ export async function executeTask(
   const sessionId = `task-${randomUUID()}`
 
   // 1. 初始化并持久化运行记录
-  await withStateLock(() => {
-    const state = loadState()
-    state.runs.push({
-      id: runId,
-      taskId: task.id,
-      taskName: task.name,
-      trigger,
-      status: 'running',
-      scheduledFor,
-      startedAt: scheduledFor,
-      sessionId,
-    })
-    return saveRuns(state.runs)
+  await createRun({
+    id: runId,
+    taskId: task.id,
+    taskName: task.name,
+    trigger,
+    status: 'running',
+    scheduledFor,
+    startedAt: scheduledFor,
+    sessionId,
   })
 
   // 辅助内联函数：把某次执行更新为终态并持久化（保留最近 RUNS_HISTORY_LIMIT 条）
   const finalizeRun = (status: 'succeeded' | 'failed' | 'cancelled', outcome: ExecuteOutcome) =>
-    withStateLock(() => {
-      const state = loadState()
-      const run = state.runs.find(r => r.id === runId)
-      if (run) {
-        run.status = status
-        run.finishedAt = new Date().toISOString()
-        run.error = outcome.error
-        if (outcome.sessionId)
-          run.sessionId = outcome.sessionId
-        state.runs = state.runs.slice(-RUNS_HISTORY_LIMIT)
-        return saveRuns(state.runs)
-      }
+    updateRun(runId, {
+      status,
+      finishedAt: new Date().toISOString(),
+      error: outcome.error,
+      ...(outcome.sessionId ? { sessionId: outcome.sessionId } : {}),
     })
 
   try {
@@ -345,7 +278,6 @@ export async function executeTask(
             task.permission,
             runtime.setApprovalPolicy,
           )
-          agentCtx.tools?.guard?.((exec: ToolExecution) => unattendedToolGuardReason(exec.name, exec.arguments))
         },
       })
 

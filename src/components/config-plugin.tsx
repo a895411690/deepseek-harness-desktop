@@ -101,14 +101,15 @@ export function ConfigPlugin() {
     },
   })
   const enable = useMutation({
-    mutationFn: (id: string) => enablePlugin(id),
-    onSuccess: (_data, id) => {
-      const name = plugins.find(p => p.id === id)?.name ?? id
+    mutationFn: (args: { id: string, clearConfigOverride: boolean }) =>
+      enablePlugin(args.id, args.clearConfigOverride),
+    onSuccess: (_data, args) => {
+      const name = plugins.find(p => p.id === args.id)?.name ?? args.id
       void queryClient.invalidateQueries({ queryKey: ['plugins'] })
       toast(t('plugins.enable_toast', { name }), {})
     },
-    onError: (err, id) => {
-      const name = plugins.find(p => p.id === id)?.name ?? id
+    onError: (err, args) => {
+      const name = plugins.find(p => p.id === args.id)?.name ?? args.id
       console.error('[ConfigPlugin] enable failed:', err)
       toast(t('plugins.enable_failed', { name }), {})
     },
@@ -221,12 +222,33 @@ export function ConfigPlugin() {
     }
   }
 
-  async function onEnable(id: string) {
+  async function onEnable(id: string, clearConfigOverride = false) {
     if (busy)
       return
+    // 配置覆盖禁用：启用会修改用户的 cordis.patch.yml（仅移除该插件的禁用覆盖，
+    // 其余配置条目保留），属于改写用户配置文件的操作，必须先明确确认。
+    if (clearConfigOverride) {
+      const name = plugins.find(p => p.id === id)?.name ?? id
+      try {
+        await openDialog({
+          status: 'warning',
+          title: t('plugins.enable_override_confirm_title'),
+          description: (
+            <p>
+              {t('plugins.enable_override_confirm_desc', { name })}
+            </p>
+          ),
+          confirmText: t('plugins.enable_override_confirm'),
+        })
+      }
+      catch (e) {
+        silence(e, 'plugin enable: config override dialog cancelled')
+        return
+      }
+    }
     setBusy({ id, action: 'enable' })
     try {
-      await enable.mutateAsync(id)
+      await enable.mutateAsync({ id, clearConfigOverride })
     }
     catch (e) {
       silence(e, 'plugin enable: error already shown by mutation onError')
@@ -431,6 +453,13 @@ export function ConfigPlugin() {
                           {t('plugins.disabled_badge')}
                         </Chip>
                       </If>
+                      {/* 配置覆盖禁用：展示在 cordis.patch.yml 中被显式禁用的真实状态
+                          （内置插件同样标注，issue #399：Scheduler/Pet 行此前只有「内置」） */}
+                      <If cond={plugin.patchDisabled}>
+                        <Chip size="sm" variant="soft" color="warning">
+                          {t('plugins.patch_disabled_badge')}
+                        </Chip>
+                      </If>
                     </div>
                     <If cond={plugin.description !== ''}>
                       <TextEllipsis lineClamp={2} className="text-xs text-muted">
@@ -462,33 +491,35 @@ export function ConfigPlugin() {
                         </span>
                       </Chip>
                     </If>
+                    {/* 启用入口：配置覆盖禁用（含内置插件）或桌面禁用清单 → 可启用。
+                        配置覆盖禁用时点击会先弹确认框，确认后后端才移除该覆盖 */}
+                    <If cond={plugin.patchDisabled || (!plugin.internal && plugin.disabled)}>
+                      <Chip
+                        className={actionChip({ busy: !!busy })}
+                        variant="primary"
+                        color="accent"
+                        size="sm"
+                        onClick={() => onEnable(plugin.id, plugin.patchDisabled)}
+                      >
+                        <span className="flex items-center gap-1">
+                          <If cond={busy?.id === plugin.id && busy.action === 'enable'} then={<Spinner size="sm" color="current" />} />
+                          {t('plugins.enable')}
+                        </span>
+                      </Chip>
+                    </If>
+                    <If cond={!plugin.internal && !plugin.patchDisabled && !plugin.disabled}>
+                      <Chip
+                        className={actionChip({ busy: !!busy })}
+                        size="sm"
+                        onClick={() => onDisable(plugin.id)}
+                      >
+                        <span className="flex items-center gap-1">
+                          <If cond={busy?.id === plugin.id && busy.action === 'disable'} then={<Spinner size="sm" color="current" />} />
+                          {t('plugins.disable')}
+                        </span>
+                      </Chip>
+                    </If>
                     <If cond={!plugin.internal}>
-                      <If cond={plugin.disabled}>
-                        <Chip
-                          className={actionChip({ busy: !!busy })}
-                          variant="primary"
-                          color="accent"
-                          size="sm"
-                          onClick={() => onEnable(plugin.id)}
-                        >
-                          <span className="flex items-center gap-1">
-                            <If cond={busy?.id === plugin.id && busy.action === 'enable'} then={<Spinner size="sm" color="current" />} />
-                            {t('plugins.enable')}
-                          </span>
-                        </Chip>
-                      </If>
-                      <If cond={!plugin.disabled}>
-                        <Chip
-                          className={actionChip({ busy: !!busy })}
-                          size="sm"
-                          onClick={() => onDisable(plugin.id)}
-                        >
-                          <span className="flex items-center gap-1">
-                            <If cond={busy?.id === plugin.id && busy.action === 'disable'} then={<Spinner size="sm" color="current" />} />
-                            {t('plugins.disable')}
-                          </span>
-                        </Chip>
-                      </If>
                       {/* 单插件快照：快照始终可用（已存在时覆盖确认）；还原/删除快照仅在
                           存在快照时显示。还原会停服务，还原后 toast 提示重启（issue #303） */}
                       <Chip

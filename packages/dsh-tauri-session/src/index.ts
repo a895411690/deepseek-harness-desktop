@@ -25,7 +25,7 @@
  *   - client/            Browser half（ofetch RPC + 设置分区 + 工作区补丁）。
  */
 
-import { SESSION_API_PREFIX, SESSION_PLUGIN_NAME } from './shared/constants.js'
+import { SESSION_API_PREFIX, SESSION_PLUGIN_NAME } from './shared/constants'
 
 /** 插件名（诊断元数据，与导出的 name 一致）。 */
 export const name = SESSION_PLUGIN_NAME
@@ -36,9 +36,9 @@ export const inject = ['webServer', 'sessions', 'workspaceRegistry', 'connection
 /** API 路由前缀（客户端同源 fetch）。 */
 export const API_PREFIX = SESSION_API_PREFIX
 
-export { apply } from './host/apply.js'
-export { archiveHooks } from './host/hooks/index.js'
-export type { ArchiveLifecycleHooks } from './host/hooks/index.js'
-export { buildRoutes } from './host/routes/index.js'
-export { updateRegistryArchiveSet } from './host/service/registry.js'
-export { encodeSessionId, isWithinSessionsRoot } from './host/service/session-files.js'
+export { apply } from './host/apply'
+export { archiveHooks } from './host/hooks'
+export type { ArchiveLifecycleHooks } from './host/hooks'
+export { buildRoutes } from './host/routes'
+export { updateRegistryArchiveSet } from './host/service/registry'
+export { encodeSessionId, isWithinSessionsRoot } from './host/service/session-files'

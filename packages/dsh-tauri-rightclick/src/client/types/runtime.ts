@@ -1,19 +1,29 @@
-/** runtime.ts — 右键菜单的运行时面：会话/工作区最小快照、扩展协议、事件 detail。 */
+/**
+ * client/types/runtime.ts — 右键菜单的运行时面与官方 controller 投影。
+ *
+ * 【来源】官方 `dsh-tauri/client` 的 `ISessions`、`IWorkspaces`、
+ * `SessionListState`、`SessionSummary`、`WorkspaceSnapshot`、`WorkspaceView`。
+ * 【版本】@deepseek-ai/dsh-api-session-controller@0.1.2-alpha.3；
+ * @deepseek-ai/dsh-api-workspace-controller@0.1.2-alpha.3。
+ * 【修订】2026-01：删除重复的官方摘要/快照声明；仅保留右键菜单扩展协议，
+ * 并把 alpha/桌面专属 `startSession` 标注为兼容扩展。
+ */
 
-/** 会话列表摘要（最小 `ctx.sessions.list` 快照面）。 */
-export interface SessionSummaryLike {
-  id: string
-  title?: string
-  displayTitle?: string
-  cwd?: string
-  blank?: boolean
-}
+import type {
+  ISessions,
+  IWorkspaces,
+  SessionId,
+  SessionListState,
+  SessionSummary,
+  WorkspaceId,
+  WorkspaceSnapshot,
+  WorkspaceView,
+} from 'dsh-tauri/client'
 
-export interface SessionListSnapshotLike {
-  ids: string[]
-  byId: Record<string, SessionSummaryLike>
-  current?: string
-}
+export type { SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceSnapshot, WorkspaceView }
+
+export type SessionSummaryLike = SessionSummary
+export type SessionListSnapshotLike = Pick<SessionListState, 'ids' | 'byId' | 'current'>
 
 /** 会话绑定（`ctx.sessions.binding` 返回面的最小子集）。 */
 export interface SessionBindingLike {
@@ -22,37 +32,15 @@ export interface SessionBindingLike {
   }
 }
 
-/** 最小 `ctx.sessions` 面（客户端用到的子集）。 */
-export interface SessionsRuntimeLike {
-  list: {
-    getSnapshot: () => SessionListSnapshotLike
-  }
-  binding: (sessionId: string) => SessionBindingLike | undefined
-  fork: (opts: { sessionId: string, increaseTitle?: boolean }) => Promise<string>
-  open: (sessionId: string) => void
-}
+/** 官方 sessions 服务加上右键菜单 fork 所需能力。 */
+export type SessionsRuntimeLike = Pick<ISessions, 'list' | 'open' | 'binding' | 'fork'>
 
-/** 工作区视图（`ctx.workspaces.list` 快照项）。 */
-export interface WorkspaceViewLike {
-  workspaceId: string
-  title: string
-  path: string
-  sessionIds: string[]
-}
+export type WorkspaceViewLike = WorkspaceView
+export type WorkspaceListSnapshotLike = Pick<WorkspaceSnapshot, 'items' | 'archivedSessionIds'>
 
-export interface WorkspaceListSnapshotLike {
-  items: WorkspaceViewLike[]
-  archivedSessionIds: string[]
-}
-
-/** 最小 `ctx.workspaces` 面（客户端用到的子集）。 */
-export interface WorkspacesRuntimeLike {
-  list: {
-    getSnapshot: () => WorkspaceListSnapshotLike
-  }
-  archiveSession: (sessionId: string) => Promise<void>
-  startSession: (workspaceId: string) => void
-  delete: (workspaceId: string) => Promise<void>
+/** 官方 workspaces 服务加上 alpha/桌面导航兼容扩展。 */
+export type WorkspacesRuntimeLike = Pick<IWorkspaces, 'list' | 'archiveSession' | 'delete'> & {
+  startSession?: (workspaceId: WorkspaceId) => void
 }
 
 /** 右键菜单扩展协议：其他 Web 插件登记到全局注册表的一条扩展项。 */

@@ -9,15 +9,15 @@
  *   卸载时统一释放定时器与路由。
  */
 
-import type { HostContext } from './types/index.js'
-import { SCHEDULER_TICK_MS } from './constants/index.js'
-import { createSchedulerHooks } from './hooks/index.js'
-import { buildRoutes } from './routes/index.js'
-import { recoverInterruptedRuns } from './service/manager.js'
-import { SchedulerEngine } from './service/scheduler.js'
-import { createToolSet } from './tools/index.js'
+import type { HostContext } from './types'
+import { SCHEDULER_TICK_MS } from './constants'
+import { createSchedulerHooks } from './hooks'
+import { buildRoutes } from './routes'
+import { recoverInterruptedRuns } from './service/run'
+import { SchedulerEngine } from './service/scheduler'
+import { createToolSet } from './tools'
 
-export type { SchedulerLifecycleHooks } from './hooks/index.js'
+export type { SchedulerLifecycleHooks } from './hooks'
 
 /** 可选配置。 */
 export interface Config {

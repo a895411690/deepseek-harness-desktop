@@ -18,7 +18,7 @@
  *      history/options）。
  */
 
-import { SCHEDULER_API_PREFIX, SCHEDULER_PLUGIN_NAME } from './shared/constants.js'
+import { SCHEDULER_API_PREFIX, SCHEDULER_PLUGIN_NAME } from './shared/constants'
 
 /** 插件名（诊断元数据，与导出的 name 一致）。 */
 export const name = SCHEDULER_PLUGIN_NAME
@@ -46,14 +46,14 @@ export const inject = [
 /** API 路由前缀（客户端同源 fetch）。 */
 export const API_PREFIX = SCHEDULER_API_PREFIX
 
-export { apply } from './host/apply.js'
-export type { Config } from './host/apply.js'
-export { createSchedulerHooks } from './host/hooks/index.js'
-export type { SchedulerLifecycleHooks } from './host/hooks/index.js'
-export { buildRoutes } from './host/routes/index.js'
-export { executeTask } from './host/service/executor.js'
-export { localTimeZone, nextOccurrence, parseTimeToMinutes, validateSchedule } from './host/service/schedule.js'
-export { SchedulerEngine } from './host/service/scheduler.js'
-export { createToolSet } from './host/tools/index.js'
-export type { SchedulerOptions, SchedulerRun, SchedulerSchedule, SchedulerTask } from './host/types/index.js'
-export { SCHEDULE_KINDS, SCHEDULER_API_PREFIX, WEEKDAYS, WORKDAY_SET } from './shared/constants.js'
+export { apply } from './host/apply'
+export type { Config } from './host/apply'
+export { createSchedulerHooks } from './host/hooks'
+export type { SchedulerLifecycleHooks } from './host/hooks'
+export { buildRoutes } from './host/routes'
+export { executeTask } from './host/service/executor'
+export { localTimeZone, nextOccurrence, parseTimeToMinutes, validateSchedule } from './host/service/schedule'
+export { SchedulerEngine } from './host/service/scheduler'
+export { createToolSet } from './host/tools'
+export type { SchedulerOptions, SchedulerRun, SchedulerSchedule, SchedulerTask } from './host/types'
+export { SCHEDULE_KINDS, SCHEDULER_API_PREFIX, WEEKDAYS, WORKDAY_SET } from './shared/constants'

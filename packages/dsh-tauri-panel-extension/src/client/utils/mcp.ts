@@ -7,8 +7,8 @@ import type { McpImportItem, ParsedMcpJson } from '../types'
 
 /** Group import candidates by source agent, known agents first. */
 export function importGroups(items: McpImportItem[]): Array<{ agent: string, label: string, items: Array<{ item: McpImportItem, index: number }> }> {
-  const label = (agent: string): string => agent === 'claude-code' ? 'Claude Code' : agent === 'codex' ? 'Codex' : agent
-  const order = ['claude-code', 'codex']
+  const label = (agent: string): string => agent === 'claude-code' ? 'Claude Code' : agent === 'codex' ? 'Codex' : agent === 'cursor' ? 'Cursor' : agent === 'gemini' ? 'Gemini CLI' : agent
+  const order = ['claude-code', 'codex', 'cursor', 'gemini']
   const agents = [...new Set(items.map(item => item.server.agent))]
     .sort((a, b) => {
       const rank = (agent: string): number => {

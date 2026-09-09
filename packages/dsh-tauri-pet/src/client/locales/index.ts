@@ -39,6 +39,8 @@ const DICT_ZH: Record<LocaleKey, string> = {
   tabCodexDesc: '从 Codex 或压缩包中导入 Codex 宠物（支持 .zip 文件）',
   tabInstalledDesc: '宠物会管理对话串，并突出显示需要关注的事项',
   toggleFailed: '切换桌宠窗口失败',
+  update: '更新',
+  updateFailed: '更新预设宠物失败',
   wakePet: '唤醒宠物',
 }
 
@@ -69,18 +71,27 @@ const DICT_EN: Record<LocaleKey, string> = {
   tabCodexDesc: 'Import Codex pets from Codex or archives (.zip files supported)',
   tabInstalledDesc: 'Pets manage your conversation threads and highlight items that need attention',
   toggleFailed: 'Failed to toggle the pet window',
+  update: 'Update',
+  updateFailed: 'Failed to update preset pet',
   wakePet: 'Wake pet',
 }
 
 let activeLocale = 'en'
 const localeRevision = createExternalStore({ revision: 0 })
 
-export function installLocale(ctx: ClientContext): void {
+export function registerLocale(ctx: ClientContext): void {
   activeLocale = ctx.locale.getLocale().active
   ctx.locale.register(NS, 'zh', DICT_ZH)
   ctx.locale.register(NS, 'en', DICT_EN)
   ctx.locale.subscribe(() => {
-    activeLocale = ctx.locale.getLocale().active
+    try {
+      activeLocale = ctx.locale.getLocale().active
+    }
+    catch {
+      // 插件 reload/卸载时上下文会短暂失效（inactive context），服务访问器抛错；
+      // 此时无需更新本地 locale 快照，忽略本次通知避免 `locale subscriber crashed` 刷屏。
+      return
+    }
     localeRevision.set(state => ({ revision: state.revision + 1 }))
   })
 }

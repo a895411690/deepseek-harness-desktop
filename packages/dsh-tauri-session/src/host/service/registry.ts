@@ -14,8 +14,8 @@
  *     保证失败可整体重试。
  */
 
-import type { HostContext, SessionLike } from '../types/index.js'
-import { findSession, sessionCwd } from './session-files.js'
+import type { HostContext, SessionLike } from '../types'
+import { findSession, sessionCwd } from './session-files'
 
 /** 宿主会话 store 的删除所需表面（桌面壳补丁暴露 remove(id)）。 */
 interface SessionStoreSurface {

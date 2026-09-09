@@ -1,4 +1,4 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientContext } from 'dsh-tauri/client'
 import { SettingsTrigger } from '../components/trigger'
 import {
   SETTINGS_REGISTRANT,
@@ -14,7 +14,7 @@ import {
  * 组件 props 仍由本地 SettingsTriggerProps 提供类型保证。
  * @param ctx - 客户端根上下文。
  */
-export function registerSettingsTrigger(ctx: Context): void {
+export function registerSettingsTrigger(ctx: ClientContext): void {
   ctx.slots.inject(SETTINGS_SIDEBAR_SLOT as never, () =>
     ctx.slots.register(
       { name: SETTINGS_SIDEBAR_SLOT, priority: SETTINGS_TRIGGER_PRIORITY, registrant: SETTINGS_REGISTRANT } as never,

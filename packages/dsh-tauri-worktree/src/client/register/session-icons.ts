@@ -1,3 +1,4 @@
+import { circleTreeSvg, mountStyle } from 'dsh-tauri-ui/client'
 /**
  * register/session-icons.ts — 会话列表里给绑定工作树的会话行加 Git 分支图标（DOM 补丁）。
  *
@@ -10,42 +11,24 @@
  * 注意：行没有 data-session-id 属性，使用 React `SessionNodeItem` Fiber key 读取精确
  * session id（只读，不移动 React 管理的节点），再读 store 判断是否处于工作树模式。
  */
-import { createLifecycleController, CssRender } from 'dsh-tauri/client'
-import { circleTreeSvg } from '../components/icons'
+import { createLifecycleController } from 'dsh-tauri/client'
 import {
   SESSION_ICON_ATTRIBUTE,
   SESSION_ICON_STYLE_ID,
   SIDEBAR_SELECTOR,
 } from '../constants'
 import { worktreeStore } from '../store'
+import sessionIconStyle from '../styles/index.cssr'
 
 /**
  * 安装会话行分支图标（CSS + DOM 观察器）。返回卸载函数。
  * @returns 卸载函数。
  */
-export function installSessionIcons(): () => void {
+export function registerSessionIcons(): () => void {
   if (typeof document === 'undefined')
     return () => {}
   const controller = createLifecycleController()
-  const cssr = CssRender()
-  if (cssr.find(SESSION_ICON_STYLE_ID) !== null)
-    return () => {}
-  const { c } = cssr
-  const iconStyle = c([
-    c(`[${SESSION_ICON_ATTRIBUTE}]`, {
-      width: '16px',
-      height: '20px',
-      flex: 'none',
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginLeft: '2px',
-      color: 'var(--dsw-alias-label-secondary)',
-    }),
-    c('[role="treeitem"]', { position: 'relative' }),
-  ])
-  iconStyle.mount({ id: SESSION_ICON_STYLE_ID, head: true })
-  controller.add(() => iconStyle.unmount({ id: SESSION_ICON_STYLE_ID }))
+  controller.add(mountStyle(sessionIconStyle, SESSION_ICON_STYLE_ID))
 
   /**
    * HARDCODE: DSH 0.1.1-rc.2 does not expose a per-session-row slot or data id,

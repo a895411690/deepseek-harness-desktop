@@ -23,7 +23,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)}`
 }
 
-/** 轮询 health check 确认 DSH 服务已真正停止，避免文件锁冲突。
+/**
+ * 轮询 health check 确认 DSH 服务已真正停止，避免文件锁冲突。
  *  - 使用剩余 timeout 约束 in-flight 的 probe，防止无限挂起
  *  - 仅当 health check 明确失败（非 transient 错误）时才视为已停止
  *  - 超时后继续执行（shutdown 可能仍在进行中）

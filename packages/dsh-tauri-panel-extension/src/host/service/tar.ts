@@ -1,3 +1,4 @@
+import type { Buffer } from 'node:buffer'
 /**
  * Minimal pure-JS tar.gz extraction (node zlib + a USTAR/GNU/PAX-path
  * reader). GitHub codeload tarballs are all we ever unpack — regular files
@@ -6,7 +7,6 @@
  * the filesystem. No subprocess: the dsh sidecar must not spawn tar.
  */
 
-import type { Buffer } from 'node:buffer'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { dirname, join } from 'pathe'

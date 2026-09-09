@@ -9,14 +9,17 @@
 import type { ReactElement } from 'react'
 import type { OpenTarget, SkillEditorState, SkillRowView, SkillsTabProps } from '../types'
 import { Button, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ArrowRotateRight, GraduationCap, Icon, LogoGithub, useMountStyle } from 'dsh-tauri-ui/client'
 import { useEffect, useMemo, useState } from 'react'
-import { IconGitHub, IconRefresh, IconSkill } from '../components/icons'
+import { getSkill, getSkills, postOpen, postRootsAdd, postSkillDelete, postSkillPolicy, postSkillSave, postSkillsRefresh } from '../apis'
 import { MarkdownPreview } from '../components/markdown'
-import { IMPORT_REFRESH_DELAYS_MS, SKILL_REFRESH_INTERVAL_MS, SKILL_REFRESH_TIMEOUT_MS, SOURCE_LOCALE_KEYS } from '../constants'
+import { IMPORT_REFRESH_DELAYS_MS, SKILL_REFRESH_INTERVAL_MS, SKILL_REFRESH_TIMEOUT_MS, SKILLS_TAB_STYLE_ID, SOURCE_LOCALE_KEYS } from '../constants'
 import { useTimers } from '../hooks/use-timers'
 import { normalizeRepository, policyTag } from '../utils/skills'
+import skillsTabStyle from './skills-tab.cssr'
 
-export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactElement {
+export function SkillsTab({ t, createSkill }: SkillsTabProps): ReactElement {
+  useMountStyle(skillsTabStyle, SKILLS_TAB_STYLE_ID)
   const [skills, setSkills] = useState<SkillRowView[] | null>(null)
   const [editor, setEditor] = useState<SkillEditorState | null>(null)
   const [preview, setPreview] = useState(false)
@@ -33,7 +36,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
 
   useEffect(() => {
     let current = true
-    void injected.list().then(
+    void getSkills().then(
       (body) => {
         if (current)
           setSkills(body.skills)
@@ -48,12 +51,12 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
     return () => {
       current = false
     }
-  }, [injected, reload, t])
+  }, [reload, t])
 
   const doRefresh = async (): Promise<void> => {
     setBusy(true)
     try {
-      const body = await injected.refresh()
+      const body = await postSkillsRefresh()
       setSkills(body.skills)
       setOutcome({ ok: true, text: t('refreshed') })
     }
@@ -70,7 +73,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
     const tick = (): void => {
       if (Date.now() > deadline)
         return
-      later(() => void injected.list().then((body) => {
+      later(() => void getSkills().then((body) => {
         if (!mounted.current)
           return
         setSkills(body.skills)
@@ -84,7 +87,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
   const openExisting = async (skill: SkillRowView): Promise<void> => {
     setBusy(true)
     try {
-      const body = await injected.get(skill.name)
+      const body = await getSkill(skill.name)
       setPreview(!skill.editable)
       setEditor({ mode: skill.editable ? 'edit' : 'view', name: skill.name, description: skill.description, whenToUse: skill.whenToUse ?? '', modelInvocable: skill.invocation.modelInvocable, userInvocable: skill.invocation.userInvocable, content: body.content })
     }
@@ -99,7 +102,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
     setBusy(true)
     setFormError(null)
     try {
-      await injected.save({ name, description: editor.description, whenToUse: editor.whenToUse.trim() || undefined, modelInvocable: editor.modelInvocable, userInvocable: editor.userInvocable, content: editor.content })
+      await postSkillSave({ name: editor.name.trim(), description: editor.description, whenToUse: editor.whenToUse.trim() || undefined, modelInvocable: editor.modelInvocable, userInvocable: editor.userInvocable, content: editor.content })
       setEditor(null)
       setOutcome({ ok: true, text: t('saved') })
       refreshUntil(rows => rows.some(row => row.name === name))
@@ -114,7 +117,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
     const name = confirmName
     setBusy(true)
     try {
-      await injected.remove(name)
+      await postSkillDelete({ name })
       setOutcome({ ok: true, text: t('saved') })
       refreshUntil(rows => !rows.some(row => row.name === name))
     }
@@ -129,7 +132,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
     const enabled = skill.invocation.modelInvocable || skill.invocation.userInvocable
     setBusy(true)
     try {
-      await injected.policy(skill.name, !enabled)
+      await postSkillPolicy({ name: skill.name, enabled: !enabled })
       setOutcome({ ok: true, text: t(enabled ? 'skillDisabledMsg' : 'skillEnabled') })
       refreshUntil((rows) => {
         const row = rows.find(item => item.name === skill.name)
@@ -142,7 +145,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
 
   const doOpen = async (target: OpenTarget): Promise<void> => {
     try {
-      await injected.open(target)
+      await postOpen(target)
     }
     catch (error) { setOutcome({ ok: false, text: `${t('failed')}: ${error instanceof Error ? error.message : String(error)}` }) }
   }
@@ -168,7 +171,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
     setBusy(true)
     setFormError(null)
     try {
-      await injected.importRepository(url)
+      await postRootsAdd(url)
       setOutcome({ ok: true, text: t('importRepositorySuccess') })
       setImportOpen(false)
       setRepositoryUrl('')
@@ -176,7 +179,7 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
         await new Promise<void>(resolve => later(resolve, delay))
         if (!mounted.current)
           return
-        setSkills((await injected.list()).skills)
+        setSkills((await getSkills()).skills)
       }
     }
     catch (error) { setFormError(error instanceof Error ? error.message : String(error)) }
@@ -192,11 +195,11 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
   const readOnly = editor?.mode === 'view'
 
   return (
-    <div className="dpte-section">
-      <div className="dpte-head">
-        <IconSkill />
+    <div className="dshp-extension__section">
+      <div className="dshp-extension__head">
+        <Icon as={GraduationCap} />
         <h3>{t('skillsTitle')}</h3>
-        <span className="dpte-spacer" />
+        <span className="dshp-extension__spacer" />
         <Button variant="ghost" size="sm" onClick={() => void doOpen({ target: 'user-skills' })}>{t('openUserSkills')}</Button>
         <Button
           variant="ghost"
@@ -212,46 +215,46 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
         <Button variant="primary" size="sm" disabled={busy} onClick={() => void doCreate()}>{t('newSkill')}</Button>
 
       </div>
-      <p className="dpte-intro">{t('skillsIntro')}</p>
+      <p className="dshp-extension__intro">{t('skillsIntro')}</p>
       {outcome && (
-        <div className="dpte-banner" data-kind={outcome.ok ? 'ok' : 'error'} role="status">
+        <div className="dshp-extension__banner" data-kind={outcome.ok ? 'ok' : 'error'} role="status">
           <StateDot state={outcome.ok ? 'done' : 'error'} size={10} />
-          <div className="dpte-bannerBody">{outcome.text}</div>
+          <div className="dshp-extension__banner-body">{outcome.text}</div>
         </div>
       )}
-      <div className="dpte-listHead">
+      <div className="dshp-extension__list-head">
         <h3>{t('skillsTab')}</h3>
         {skills && (
-          <span className="dpte-count">
+          <span className="dshp-extension__count">
             {filtered.length}
             /
             {skills.length}
           </span>
         )}
-        <span className="dpte-spacer" />
-        <input className="dpte-search" type="search" placeholder={t('searchSkills')} aria-label={t('searchSkills')} value={query} onChange={event => setQuery(event.target.value)} />
-        <button type="button" className="dpte-refresh" aria-label={t('refresh')} title={t('refresh')} disabled={busy} onClick={() => void doRefresh()}><IconRefresh /></button>
+        <span className="dshp-extension__spacer" />
+        <input className="dshp-extension__search" type="search" placeholder={t('searchSkills')} aria-label={t('searchSkills')} value={query} onChange={event => setQuery(event.target.value)} />
+        <button type="button" className="dshp-extension__refresh" aria-label={t('refresh')} title={t('refresh')} disabled={busy} onClick={() => void doRefresh()}><Icon as={ArrowRotateRight} /></button>
       </div>
-      {sources.length > 1 && <div className="dpte-chips" role="group" aria-label={t('source')}>{[{ id: 'all', label: t('filterAll') }, ...sources.map(source => ({ id: source, label: t(SOURCE_LOCALE_KEYS[source] ?? 'sourceCustom') }))].map(chip => <button key={chip.id} type="button" className="dpte-chip" data-active={sourceFilter === chip.id ? 'true' : undefined} onClick={() => setSourceFilter(chip.id)}>{chip.label}</button>)}</div>}
-      {skills === null && <p className="dpte-empty">{t('loading')}</p>}
-      {skills !== null && filtered.length === 0 && <p className="dpte-empty">{skills.length === 0 ? t('emptySkills') : t('noMatch')}</p>}
+      {sources.length > 1 && <div className="dshp-extension__chips" role="group" aria-label={t('source')}>{[{ id: 'all', label: t('filterAll') }, ...sources.map(source => ({ id: source, label: t(SOURCE_LOCALE_KEYS[source] ?? 'sourceCustom') }))].map(chip => <button key={chip.id} type="button" className="dshp-extension__chip" data-active={sourceFilter === chip.id ? 'true' : undefined} onClick={() => setSourceFilter(chip.id)}>{chip.label}</button>)}</div>}
+      {skills === null && <p className="dshp-extension__empty">{t('loading')}</p>}
+      {skills !== null && filtered.length === 0 && <p className="dshp-extension__empty">{skills.length === 0 ? t('emptySkills') : t('noMatch')}</p>}
       {filtered.length > 0 && (
-        <ul className="dpte-cards">
+        <ul className="dshp-extension__cards">
           {filtered.map((skill) => {
             const tag = policyTag(skill)
             return (
-              <li className="dpte-card" key={`${skill.source}/${skill.name}`}>
-                <div className="dpte-cardTop">
-                  <strong className="dpte-cardTitle" title={skill.name}>{skill.name}</strong>
-                  <span className="dpte-tag" data-kind="source">{t(SOURCE_LOCALE_KEYS[skill.source] ?? 'sourceCustom')}</span>
-                  {tag.key && <span className="dpte-tag" data-kind={tag.off ? 'off' : undefined}>{t(tag.key)}</span>}
+              <li className="dshp-extension__card" key={`${skill.source}/${skill.name}`}>
+                <div className="dshp-extension__card-top">
+                  <strong className="dshp-extension__card-title" title={skill.name}>{skill.name}</strong>
+                  <span className="dshp-extension__tag" data-kind="source">{t(SOURCE_LOCALE_KEYS[skill.source] ?? 'sourceCustom')}</span>
+                  {tag.key && <span className="dshp-extension__tag" data-kind={tag.off ? 'off' : undefined}>{t(tag.key)}</span>}
                 </div>
-                <p className="dpte-cardDesc" title={skill.description}>{skill.description}</p>
-                <div className="dpte-cardRow">
-                  {skill.policyEditable && <button type="button" className="dpte-switch" role="switch" aria-checked={skill.invocation.modelInvocable || skill.invocation.userInvocable} aria-label={t('toggleSkill')} title={t('toggleSkillHint')} disabled={busy} onClick={() => void doToggle(skill)}><span className="dpte-switchKnob" /></button>}
-                  {skill.dir && <button type="button" className="dpte-link" onClick={() => void doOpen({ target: 'skill', name: skill.name })}>{t('openFolder')}</button>}
-                  <span className="dpte-spacer" />
-                  {skill.repository?.githubUrl && <a className="dpte-iconLink" href={skill.repository.githubUrl} target="_blank" rel="noreferrer" aria-label={t('githubRepository')} title={t('githubRepository')}><IconGitHub /></a>}
+                <p className="dshp-extension__card-desc" title={skill.description}>{skill.description}</p>
+                <div className="dshp-extension__card-row">
+                  {skill.policyEditable && <button type="button" className="dshp-extension__switch" role="switch" aria-checked={skill.invocation.modelInvocable || skill.invocation.userInvocable} aria-label={t('toggleSkill')} title={t('toggleSkillHint')} disabled={busy} onClick={() => void doToggle(skill)}><span className="dshp-extension__switch-knob" /></button>}
+                  {skill.dir && <button type="button" className="dshp-extension__link" onClick={() => void doOpen({ target: 'skill', name: skill.name })}>{t('openFolder')}</button>}
+                  <span className="dshp-extension__spacer" />
+                  {skill.repository?.githubUrl && <a className="dshp-extension__icon-link" href={skill.repository.githubUrl} target="_blank" rel="noreferrer" aria-label={t('githubRepository')} title={t('githubRepository')}><Icon as={LogoGithub} /></a>}
                   <Button variant="ghost" size="sm" disabled={busy} onClick={() => void openExisting(skill)}>{skill.editable ? t('edit') : t('view')}</Button>
                   {skill.removable && <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmName(skill.name)}>{t('delete')}</Button>}
                 </div>
@@ -261,22 +264,22 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
         </ul>
       )}
 
-      <Modal open={editor !== null} onClose={() => setEditor(null)} closeLabel={t('close')} title={editor?.mode === 'edit' ? t('editSkill') : t('viewSkill')} className="dpte-modalForm" contentClassName="dpte-modalScroll">
+      <Modal open={editor !== null} onClose={() => setEditor(null)} closeLabel={t('close')} title={editor?.mode === 'edit' ? t('editSkill') : t('viewSkill')} className="dshp-extension dshp-extension__modal-form" contentClassName="dshp-extension__modal-scroll">
         {editor && (
-          <div className="dpte-form">
-            <label className="dpte-label">
+          <div className="dshp-extension__form">
+            <label className="dshp-extension__label">
               <span>{t('skillName')}</span>
-              <input className="dpte-input" value={editor.name} disabled />
+              <input className="dshp-extension__input" value={editor.name} disabled />
             </label>
-            <label className="dpte-label">
+            <label className="dshp-extension__label">
               <span>{t('skillDescription')}</span>
-              <input className="dpte-input" value={editor.description} disabled={readOnly} onChange={event => setEditor({ ...editor, description: event.target.value })} />
+              <input className="dshp-extension__input" value={editor.description} disabled={readOnly} onChange={event => setEditor({ ...editor, description: event.target.value })} />
             </label>
-            <label className="dpte-label">
+            <label className="dshp-extension__label">
               <span>{t('skillWhenToUse')}</span>
-              <input className="dpte-input" value={editor.whenToUse} disabled={readOnly} onChange={event => setEditor({ ...editor, whenToUse: event.target.value })} />
+              <input className="dshp-extension__input" value={editor.whenToUse} disabled={readOnly} onChange={event => setEditor({ ...editor, whenToUse: event.target.value })} />
             </label>
-            <div className="dpte-checks">
+            <div className="dshp-extension__checks">
               <label>
                 <input type="checkbox" checked={editor.modelInvocable} disabled={readOnly} onChange={event => setEditor({ ...editor, modelInvocable: event.target.checked })} />
                 {t('modelInvocable')}
@@ -286,20 +289,20 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
                 {t('userInvocable')}
               </label>
             </div>
-            <div className="dpte-label">
-              <div className="dpte-cardRow">
+            <div className="dshp-extension__label">
+              <div className="dshp-extension__card-row">
                 <span>{t('skillContent')}</span>
-                <span className="dpte-spacer" />
-                <div className="dpte-segments" role="tablist" aria-label={t('skillContent')}>
-                  <button type="button" role="tab" aria-selected={preview} className="dpte-segment" data-active={preview ? 'true' : undefined} onClick={() => setPreview(true)}>{t('skillPreview')}</button>
-                  <button type="button" role="tab" aria-selected={!preview} className="dpte-segment" data-active={!preview ? 'true' : undefined} onClick={() => setPreview(false)}>{readOnly ? t('skillPlainText') : t('edit')}</button>
+                <span className="dshp-extension__spacer" />
+                <div className="dshp-extension__segments" role="tablist" aria-label={t('skillContent')}>
+                  <button type="button" role="tab" aria-selected={preview} className="dshp-extension__segment" data-active={preview ? 'true' : undefined} onClick={() => setPreview(true)}>{t('skillPreview')}</button>
+                  <button type="button" role="tab" aria-selected={!preview} className="dshp-extension__segment" data-active={!preview ? 'true' : undefined} onClick={() => setPreview(false)}>{readOnly ? t('skillPlainText') : t('edit')}</button>
                 </div>
               </div>
-              {preview ? <div className="dpte-mdPreview"><MarkdownPreview text={editor.content} /></div> : <textarea className="dpte-textarea" value={editor.content} readOnly={readOnly} onChange={event => setEditor({ ...editor, content: event.target.value })} />}
+              {preview ? <div className="dshp-extension__md-preview"><MarkdownPreview text={editor.content} /></div> : <textarea className="dshp-extension__textarea" value={editor.content} readOnly={readOnly} onChange={event => setEditor({ ...editor, content: event.target.value })} />}
             </div>
-            {formError && <p className="dpte-formError">{formError}</p>}
-            <div className="dpte-cardRow">
-              <span className="dpte-spacer" />
+            {formError && <p className="dshp-extension__form-error">{formError}</p>}
+            <div className="dshp-extension__card-row">
+              <span className="dshp-extension__spacer" />
               <Button variant="ghost" onClick={() => setEditor(null)}>{readOnly ? t('close') : t('cancel')}</Button>
               {!readOnly && <Button variant="primary" disabled={busy} onClick={() => void doSave()}>{t('save')}</Button>}
             </div>
@@ -321,14 +324,14 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
       >
         <p>{t('deleteWarn')}</p>
       </Modal>
-      <Modal open={importOpen} onClose={() => setImportOpen(false)} closeLabel={t('close')} title={t('importRepositoryTitle')} className="dpte-modalWide">
-        <div className="dpte-form">
-          <p className="dpte-intro">{t('importRepositoryHint')}</p>
-          <label className="dpte-label">
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} closeLabel={t('close')} title={t('importRepositoryTitle')} className="dshp-extension dshp-extension__modal-wide">
+        <div className="dshp-extension__form">
+          <p className="dshp-extension__intro">{t('importRepositoryHint')}</p>
+          <label className="dshp-extension__label">
             <span>{t('repository')}</span>
             <input
               autoFocus
-              className="dpte-input"
+              className="dshp-extension__input"
               placeholder={t('importRepositoryPlaceholder')}
               value={repositoryUrl}
               onChange={event => setRepositoryUrl(event.target.value)}
@@ -338,9 +341,9 @@ export function SkillsTab({ t, injected, createSkill }: SkillsTabProps): ReactEl
               }}
             />
           </label>
-          {formError && <p className="dpte-formError">{formError}</p>}
-          <div className="dpte-cardRow">
-            <span className="dpte-spacer" />
+          {formError && <p className="dshp-extension__form-error">{formError}</p>}
+          <div className="dshp-extension__card-row">
+            <span className="dshp-extension__spacer" />
             <Button variant="ghost" disabled={busy} onClick={() => setImportOpen(false)}>{t('cancel')}</Button>
             <Button variant="primary" disabled={busy || repositoryUrl.trim() === ''} onClick={() => void doImport()}>{t('importRepository')}</Button>
           </div>

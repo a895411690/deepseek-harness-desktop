@@ -9,12 +9,12 @@
  */
 
 import type { Hookable } from 'hookable'
-import type { SchedulerLifecycleHooks } from '../hooks/index.js'
-import type { HostContext, SchedulerTask } from '../types/index.js'
-import { MAX_CONCURRENT_RUNS } from '../constants/index.js'
-import { loadState, saveTasks, withStateLock } from '../storage/index.js'
-import { executeTask } from './executor.js'
-import { nextOccurrence } from './schedule.js'
+import type { SchedulerLifecycleHooks } from '../hooks'
+import type { HostContext, SchedulerTask } from '../types'
+import { MAX_CONCURRENT_RUNS } from '../constants'
+import { executeTask } from './executor'
+import { nextOccurrence } from './schedule'
+import { getAllTask, updateTaskTimes } from './task'
 
 /** 调度引擎：持有运行中任务集合，暴露 tick() 供 apply 的定时器驱动。 */
 export class SchedulerEngine {
@@ -36,7 +36,7 @@ export class SchedulerEngine {
   async runNow(taskId: string): Promise<{ ok: boolean, error?: string }> {
     if (this.running.has(taskId))
       return { ok: false, error: '任务正在执行中' }
-    const task = loadState().tasks.find(t => t.id === taskId)
+    const task = (await getAllTask()).find(t => t.id === taskId)
     if (!task)
       return { ok: false, error: '任务不存在' }
     // 入队即返回（执行在后台推进，不等整次运行收敛）。
@@ -48,35 +48,16 @@ export class SchedulerEngine {
 
   /** 单个 tick：处理所有到期任务。 */
   async tick(): Promise<void> {
-    const state = loadState()
-    const tasks = state.tasks
+    const tasks = await getAllTask()
     if (tasks.length === 0)
       return
     const now = Date.now()
     // 先补齐缺失的 nextRunAt（新建/导入/重新启用的任务按计划计算），再判到期。
-    let backfilled = false
-    for (const task of tasks) {
-      if (task.enabled && task.nextRunAt === undefined) {
-        const next = nextOccurrence(task.schedule, now)
-        if (next !== undefined) {
-          task.nextRunAt = new Date(next).toISOString()
-          backfilled = true
-        }
-      }
-    }
-    if (backfilled) {
-      await withStateLock(() => {
-        // 锁内重读，避免覆盖并发的 CRUD 变更。
-        const state = loadState()
-        for (const task of state.tasks) {
-          if (task.enabled && task.nextRunAt === undefined) {
-            const next = nextOccurrence(task.schedule, now)
-            if (next !== undefined)
-              task.nextRunAt = new Date(next).toISOString()
-          }
-        }
-        return saveTasks(state.tasks)
-      })
+    const backfill = tasks.filter(task => task.enabled && task.nextRunAt === undefined)
+    for (const task of backfill) {
+      const next = nextOccurrence(task.schedule, now)
+      if (next !== undefined)
+        await updateTaskTimes(task.id, { nextRunAt: new Date(next).toISOString() })
     }
     const due = tasks.filter(task =>
       task.enabled
@@ -117,16 +98,14 @@ export class SchedulerEngine {
       this.running.delete(task.id)
       // 无论成败都推进到下次触发（失败也会按计划重试，避免卡死在同一次）。
       const now = Date.now()
-      const next = nextOccurrence(task.schedule, now)
-      task.nextRunAt = next === undefined ? undefined : new Date(next).toISOString()
-      await withStateLock(() => {
-        const state = loadState()
-        const stored = state.tasks.find(t => t.id === task.id)
-        if (!stored)
-          return
-        stored.lastRunAt = task.lastRunAt
-        stored.nextRunAt = task.nextRunAt
-        return saveTasks(state.tasks)
+      // Fixed-anchor schedules advance from the prior planned occurrence, not completion time.
+      const previous = task.nextRunAt ? new Date(task.nextRunAt).getTime() : now
+      const next = task.schedule.kind === 'interval' || task.schedule.kind === 'custom'
+        ? nextOccurrence(task.schedule, previous)
+        : nextOccurrence(task.schedule, now)
+      await updateTaskTimes(task.id, {
+        lastRunAt: task.lastRunAt,
+        nextRunAt: next === undefined ? undefined : new Date(next).toISOString(),
       })
     }
   }

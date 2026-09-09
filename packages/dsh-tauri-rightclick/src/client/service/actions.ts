@@ -8,9 +8,8 @@ import type {
   WorkspacesRuntimeLike,
   WorkspaceViewLike,
 } from '../types'
-import { requestJson } from 'dsh-tauri/client'
+import { postOpenUrl } from '../apis'
 import { confirmDialog } from '../components/confirm-dialog'
-import { OPEN_URL_ROUTE } from '../constants'
 import { externalUrl, isWorkspaceAction, officialAction } from '../dom/locate'
 import { text } from '../locales'
 import { toast } from '../utils/dialog'
@@ -22,10 +21,7 @@ export async function openExternalUrl(value: string): Promise<void> {
   const url = externalUrl(value)
   if (!url)
     throw new Error(text('openFailed', { reason: text('invalidLink') }))
-  const result = await requestJson<{ ok?: boolean, error?: string }>(OPEN_URL_ROUTE, '', {
-    method: 'POST',
-    body: JSON.stringify({ url }),
-  })
+  const result = await postOpenUrl({ url })
   if (!result?.ok)
     throw new Error(text('openFailed', { reason: result?.error || text('unknownError') }))
 }

@@ -7,6 +7,39 @@
  */
 import { text } from '../locales'
 
+/**
+ * 将文本粘贴进可编辑元素（input/textarea 走 replaceSelection，contenteditable
+ * 走编辑器自身粘贴管线）。
+ *
+ * contenteditable（Lexical 系富文本编辑器，如 dsh 聊天输入框 `data-composer-input`）
+ * 只接受自身编辑管线：外部直接改 DOM 再派发合成 `input` 事件会被编辑器模型
+ * reconcile 静默丢弃（表现为右键「粘贴」点了没反应、无报错、无 toast）。因此
+ * 优先派发携带纯文本 DataTransfer 的合成 paste 事件交给编辑器自身 beforeinput/
+ * paste 管线；若编辑器未接管（内容未变化）再回退 `document.execCommand('insertText')`，
+ * 最后才退回原 DOM 写入。input/textarea 行为与旧实现一致。
+ */
+export function pasteInto(editable: HTMLElement, value: string): void {
+  if (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement) {
+    replaceSelection(editable, value)
+    return
+  }
+  editable.focus()
+  const before = editable.textContent ?? ''
+  // 合成 paste 事件不带默认行为，须由监听器（编辑器管线）接管并 preventDefault + 写入。
+  const dataTransfer = new DataTransfer()
+  dataTransfer.setData('text/plain', value)
+  editable.dispatchEvent(new ClipboardEvent('paste', {
+    bubbles: true,
+    cancelable: true,
+    clipboardData: dataTransfer,
+  }))
+  if ((editable.textContent ?? '') !== before)
+    return
+  if (document.execCommand('insertText', false, value))
+    return
+  replaceSelection(editable, value)
+}
+
 /** 替换可编辑元素中的当前选区（输入/文本域/可编辑区三态）。 */
 export function replaceSelection(editable: HTMLElement, value: string): void {
   editable.focus()

@@ -9,11 +9,12 @@
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReactElement } from 'react'
 import type { TaskView, Translate } from '../types'
-import { IconWarningOutline16, Menu, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Menu, Modal, Toast, IconWarningOutline16 as Warning } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CirclePause, CirclePlay, EllipsisVertical, Icon, TrashBin, useMountStyle } from 'dsh-tauri-ui/client'
 import { useRef, useState } from 'react'
-import { SCHEDULER_CLASSES as K } from '../constants'
-import { applyDeleteTask, applyRunTask, applyToggleTask } from '../store'
-import { IconMore, IconPause, IconPlay, IconTrash } from './icons'
+import { TASK_CARD_STYLE_ID } from '../constants'
+import { applyDeleteTask, applyRunTask, applyToggleTask } from '../service/scheduler'
+import taskCardStyle from './task-card.cssr'
 
 export interface TaskCardProps {
   task: TaskView
@@ -26,6 +27,7 @@ export interface TaskCardProps {
 }
 
 export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCardProps): ReactElement {
+  useMountStyle(taskCardStyle, TASK_CARD_STYLE_ID)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -74,16 +76,17 @@ export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCar
   }
 
   const items: MenuEntry[] = [
-    { id: 'run', label: t('runNow'), icon: <IconPlay /> },
-    { id: 'toggle', label: paused ? t('resume') : t('pause'), icon: <IconPause /> },
+    { id: 'edit', label: t('edit'), icon: <Icon as={CirclePlay} /> },
+    { id: 'run', label: t('runNow'), icon: <Icon as={CirclePlay} /> },
+    { id: 'toggle', label: paused ? t('resume') : t('pause'), icon: <Icon as={CirclePause} /> },
     { type: 'separator', id: 'sep' },
-    { id: 'delete', label: t('delete'), icon: <IconTrash />, danger: true },
+    { id: 'delete', label: t('delete'), icon: <Icon as={TrashBin} />, danger: true },
   ]
 
   return (
     <li
       ref={cardRef}
-      className={`${K.card}${paused ? ` ${K.cardPaused}` : ''}`}
+      className={`${'dshp-scheduler__card'}${paused ? ` ${'dshp-scheduler__card--paused'}` : ''}`}
       onClick={(event) => {
         // 仅当点击落在卡片本体（title/meta 文本）时打开编辑；portaled 的菜单列表 /
         // Modal 不是 li 的 DOM 后代，contains() 为 false，不触发编辑（避免误开弹窗）。
@@ -93,22 +96,22 @@ export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCar
     >
       <div style={{ height: 36 }}>
         <span
-          className={K.taskToggle}
+          className="dshp-scheduler__task-toggle"
           aria-label={paused ? t('resume') : t('pause')}
           onClick={(event) => {
             event.stopPropagation()
             void onToggle()
           }}
         >
-          {paused ? <IconPlay /> : <IconPause />}
+          {paused ? <Icon as={CirclePlay} /> : <Icon as={CirclePause} />}
         </span>
       </div>
       <div style={{ flex: 1 }}>
-        <span className={K.cardTitle} title={task.name}>
+        <span className="dshp-scheduler__card-title" title={task.name}>
           {task.name}
         </span>
-        <div className={K.cardMeta}>
-          <span className={K.cardMetaText}>
+        <div className="dshp-scheduler__card-meta">
+          <span className="dshp-scheduler__card-meta-text">
             {describe}
             {' · '}
             {nextRun !== undefined
@@ -131,7 +134,9 @@ export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCar
         onClose={() => setMenuOpen(false)}
         onSelect={(id) => {
           setMenuOpen(false)
-          if (id === 'run')
+          if (id === 'edit')
+            onEdit(task)
+          else if (id === 'run')
             onRun()
           else if (id === 'toggle')
             onToggle()
@@ -144,7 +149,7 @@ export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCar
         anchor={(
           <button
             type="button"
-            className={K.iconButton}
+            className="dshp-scheduler__icon-button"
             aria-label={task.name}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
@@ -153,17 +158,17 @@ export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCar
               setMenuOpen(openState => !openState)
             }}
           >
-            <IconMore size={12} />
+            <Icon as={EllipsisVertical} size={12} />
           </button>
         )}
       />
-      {actionError ? <p className={K.error} role="alert">{actionError}</p> : null}
+      {actionError ? <p className="dshp-scheduler__error" role="alert">{actionError}</p> : null}
       {toast !== null
         ? (
             <Toast
               key={toast.seq}
               text={toast.text}
-              icon={<IconWarningOutline16 />}
+              icon={<Icon as={Warning} />}
               anchor={cardRef.current}
               onDone={() => setToast(null)}
             />
@@ -178,8 +183,8 @@ export function TaskCard({ task, t, describe, nextRun, paused, onEdit }: TaskCar
         closeLabel={t('close')}
         footer={(
           <>
-            <button className={K.btn} type="button" onClick={() => setConfirmOpen(false)}>{t('cancel')}</button>
-            <button className={`${K.btn} ${K.btnDanger}`} type="button" onClick={() => void onDelete()}>{t('deleteConfirmAction')}</button>
+            <button className="dshp-scheduler__btn" type="button" onClick={() => setConfirmOpen(false)}>{t('cancel')}</button>
+            <button className={`${'dshp-scheduler__btn'} ${'dshp-scheduler__btn--danger'}`} type="button" onClick={() => void onDelete()}>{t('deleteConfirmAction')}</button>
           </>
         )}
       />

@@ -55,6 +55,38 @@ export interface PetConfig {
   eventsRefreshSec?: Record<string, number>
 }
 
+/**
+ * 播放状态是否循环。
+ * - idle/running/moving-*\/dragging：常驻循环（手势期间持续直到结束）；
+ * - 细分工作状态档位 thinking/working/result/waiting：非终态档，常驻循环播动画
+ *   （对齐 dsh-pet workStatusTick 语义：等用户/干活期间动画不自动结束）；
+ * - 终态档 success/error 与 review/failed：播一次后回落（气泡收尾由 use-bubble 管理）。
+ */
+export function isLoopingAnimation(activity: string): boolean {
+  return activity === 'idle' || activity === 'running'
+    || activity === 'thinking' || activity === 'working' || activity === 'result' || activity === 'waiting'
+    || activity === 'moving-left' || activity === 'moving-right'
+    || activity === 'dragging'
+}
+
+/**
+ * 自定义 Codex v2 图集没有细分档位行（固定 8×11，无思考/工作/整理/庆祝行）：
+ * 细分档播放时近似映射到既有行，避免播到错误 sprite（保留会话状态近似观感）。
+ */
+export function spriteStatusFallback(activity: string): string {
+  return activity === 'thinking'
+    ? 'waiting'
+    : activity === 'working'
+      ? 'running'
+      : activity === 'result'
+        ? 'review'
+        : activity === 'success'
+          ? 'waving'
+          : activity === 'error'
+            ? 'failed'
+            : activity
+}
+
 /** 从字符串池等概率抽一个；exclude 排除某个名字（避免连续重复）。 */
 export function pick<T>(pool: readonly T[], exclude?: T): T {
   const entries = exclude === undefined ? pool : pool.filter(item => item !== exclude)
@@ -125,15 +157,27 @@ export function poolEntryToStatus(entry: string): string {
 /**
  * DSH 会话状态 → dsh-pet 动画名（webm 文件名主名）的叠加映射。
  *
- * dsh-pet 协议（config.jsonc）只有 idle/turn/drag/clicks/moves/categories/events 池，
- * 没有 waiting/running/review/failed/bubble 这些 DSH 会话状态的对应池。这些动画文件
- * 在预设资产里真实存在（与旧内置 maid-*.webm 按字节一一对应，见 pet.todo.md 4.0），
- * 由本表把会话状态映射到具体文件名：running 循环写代码、waiting 深度思考碎碎念、
- * review 轻快记录、failed 玩游戏气急败坏、bubble 鲸鱼吐泡泡特效。
- * 资产缺失时 resolvePresetName 仍返回 null（调用方保持当前动画，不做静默兜底）。
+ * 两族状态：
+ * 1. 细分工作状态档位（workStatus，host reducer 输出）：thinking/working/result/
+ *    waiting/success/error，对齐 dsh-pet config.jsonc animations.events.workStatus
+ *    数组（索引即档位）——turn/start→thinking、tool/call→working、tool/result→result、
+ *    approval/asked 等→waiting、turn/end completed→success、error/max-tokens→error。
+ *    这些档位优先映射到工作状态系列动画（思考冒泡/忙碌点按/清点归档/踱步张望/
+ *    雀跃庆祝/垂头叹气冒汗，e1ff8c1 起的新预设资产）。
+ * 2. 旧粗态兼容（无细分档的会话展示路径）：running 写代码、review 轻快记录、
+ *    failed 玩游戏气急败坏、bubble 鲸鱼吐泡泡特效。
+ * 资产缺失时 resolvePresetName 仍返回 null：会话状态（override/props 驱动）由调用方
+ * 走 fallbackPresetName 降级（避免卡在旧循环），adHoc（点击回应/待机插播）保持当前动画。
  */
 export const PRESET_SESSION_ANIMATIONS: Record<string, string> = {
-  waiting: '深度思考碎碎念',
+  // 细分工作状态档位（workStatus）
+  thinking: '工作状态-思考冒泡',
+  working: '工作状态-忙碌点按',
+  result: '工作状态-清点归档',
+  waiting: '工作状态-原地踱步张望',
+  success: '工作状态-雀跃庆祝',
+  error: '工作状态-垂头叹气冒汗',
+  // 旧粗态兼容
   running: '写代码',
   review: '轻快记录',
   failed: '玩游戏气急败坏',
@@ -175,4 +219,38 @@ export function resolvePresetName(
     return null
   const name = pick(pool)
   return assets[name] !== undefined ? name : null
+}
+
+/**
+ * 会话状态解析不到资产时的降级动画名（与 resolvePresetName 的「保持当前动画」
+ * 语义互补）：resolve 失败若不切换，宠物会永久卡在上一个循环动画上 —— 典型故障
+ * 是细分工作档（thinking/working/result/waiting）资产缺失的旧预设中，会话运行
+ * 显示待机、拖拽结束后永远循环拖拽动画。
+ *
+ * 降级链：
+ * 1. 细分工作档/粗态 running → 粗态「写代码」（旧预设普遍存在，保留「在干活」
+ *    的观感，而非退回待机）；
+ * 2. 其余状态（终态档/待机链）→ 待机池兜底；
+ * 3. 无可播资产时返回 null（调用方保持当前动画）。
+ *
+ * 仅用于会话状态（override/props 驱动）；adHoc（点击回应/待机插播）缺失时
+ * 仍保持当前动画 —— 一次性风味动画不应被错播成工作/待机动画。
+ */
+export function fallbackPresetName(
+  activity: string,
+  pools: { idlePool: readonly string[] },
+  assets: Record<string, string>,
+): string | null {
+  if (activity === 'thinking' || activity === 'working'
+    || activity === 'result' || activity === 'waiting' || activity === 'running') {
+    const running = PRESET_SESSION_ANIMATIONS.running
+    if (running !== undefined && assets[running] !== undefined)
+      return running
+  }
+  if (pools.idlePool.length > 0) {
+    const name = pick(pools.idlePool)
+    if (assets[name] !== undefined)
+      return name
+  }
+  return null
 }

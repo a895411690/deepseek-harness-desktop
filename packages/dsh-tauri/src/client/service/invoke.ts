@@ -41,6 +41,9 @@ export function invokeBridgedTauri<T>(
 
   return new Promise<T>((resolve, reject) => {
     let settled = false
+    // 定时器句柄：settle 成功/失败路径与 postMessage 抛错路径都要清理，避免高频
+    // 成功调用留下一 15s 的休眠超时闭包（见 issue #396 前端延迟根因之一）。
+    let timer: ReturnType<typeof setTimeout> | undefined
 
     function onMessage(event: MessageEvent<unknown>): void {
       // 只接受宿主（顶层）直接发回的应答，且 nonce 必须命中本次请求
@@ -58,6 +61,9 @@ export function invokeBridgedTauri<T>(
       if (settled)
         return
       settled = true
+      if (timer !== undefined)
+        clearTimeout(timer)
+      // issue #396 修复：完成路径（成功/失败）都必须清理超时计时器，避免高频成功调用遗留「休眠超时闭包」。
       window.removeEventListener('message', onMessage)
       if (reply.ok) {
         resolve(reply.value as T)
@@ -69,7 +75,7 @@ export function invokeBridgedTauri<T>(
 
     window.addEventListener('message', onMessage)
     // 超时保护：宿主未应答（监听器未挂载/iframe 非 dsh 环境等）时按失败处理
-    const timer = setTimeout(() => {
+    timer = setTimeout(() => {
       if (settled)
         return
       window.removeEventListener('message', onMessage)
@@ -88,7 +94,8 @@ export function invokeBridgedTauri<T>(
       window.parent.postMessage(request, '*')
     }
     catch (error) {
-      clearTimeout(timer)
+      if (timer !== undefined)
+        clearTimeout(timer)
       if (settled)
         return
       settled = true

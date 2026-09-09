@@ -8,12 +8,12 @@ import { activeQueues, placements } from '@/utils/toast'
 
 interface ToastProviderProps {
   children?: ReactNode
-  hideCloseButton?: boolean
+  custom?: boolean
 }
 
 /**
- * 应用共用的 HeroUI queue/provider。桌宠窗口仅通过 hideCloseButton 使用
- * 自定义渲染分支，仍复用这里的 queues 与 src/utils/toast.ts API。
+ * 应用共用的 HeroUI queue/provider。桌宠窗口通过 custom 渲染精简气泡，
+ * 主窗口保留 HeroUI 默认的操作和关闭按钮。
  */
 export function ToastProvider(props: ToastProviderProps) {
   const [updates, setUpdates] = useState(() => new Map<string, ToastUpdateEvent['options']>())
@@ -35,15 +35,11 @@ export function ToastProvider(props: ToastProviderProps) {
           key={placement}
           placement={placement}
           queue={activeQueues[placement]}
+          className="[&_[data-frontmost=true]_[data-slot=toast-close]]:pointer-events-auto [&_[data-frontmost=true]_[data-slot=toast-close]]:opacity-100"
         >
-          {props.hideCloseButton
+          {props.custom
             ? ({ toast: item }) => {
                 const content = { ...item.content, ...updates.get(item.key) }
-
-                // 对齐 HeroUI 默认渲染（getDefaultChildren）：indicator === null
-                // 隐藏图标；isLoading 时显示 Spinner；否则显示内容或按 variant 的
-                // 默认图标（default/accent→Info、success→Success、warning→Warning、
-                // danger→Danger）。
                 return (
                   <Toast toast={item} variant={content?.variant}>
                     <If cond={content?.isLoading} else={<Toast.Indicator variant={content?.variant} />}>
@@ -56,13 +52,15 @@ export function ToastProvider(props: ToastProviderProps) {
                         <Toast.Title>{content?.title}</Toast.Title>
                       </If>
                       <If cond={content?.description !== undefined}>
-                        <Toast.Description>{content?.description}</Toast.Description>
+                        <Toast.Description className="line-clamp-2">
+                          {content?.description}
+                        </Toast.Description>
                       </If>
                     </Toast.Content>
                   </Toast>
                 )
               }
-            : undefined}
+            : null}
         </Toast.Provider>
       ))}
       {props.children}

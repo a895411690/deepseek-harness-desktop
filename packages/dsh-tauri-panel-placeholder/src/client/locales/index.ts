@@ -1,4 +1,4 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientContext } from 'dsh-tauri/client'
 import { LOCALE_NAMESPACE, PANEL_LOCALE_KEY, PLUGIN_ID } from '../constants'
 
 /**
@@ -6,7 +6,7 @@ import { LOCALE_NAMESPACE, PANEL_LOCALE_KEY, PLUGIN_ID } from '../constants'
  * ctx.locale.register 类型来自 slots.d.ts 对 cordis Context 的增广。
  */
 /** 注册双语文案（分开注册：cordis locale 的 zh/en 分区；effect 内返回 dispose 组合）。 */
-export function installPanelLocale(ctx: Context): void {
+export function registerPanelLocale(ctx: ClientContext): void {
   ctx.effect(
     () => [
       ctx.locale.register(LOCALE_NAMESPACE, 'zh', { [PANEL_LOCALE_KEY]: '占位符' }),

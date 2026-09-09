@@ -17,15 +17,16 @@ import type {
   OperationResult,
   WorktreeParams,
   WorktreeProcessController,
-} from '../types/index.js'
+} from '../types'
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { rmdir } from 'node:fs/promises'
 import process from 'node:process'
 import { join, resolve } from 'pathe'
-import { WORKTREE_BRANCH_NAME_PATTERN } from '../constants/index.js'
-import { listBindings, loadBinding, removeBinding, saveBinding } from '../storage/index.js'
-import { removeDirectoryReliably } from './filesystem.js'
+import { WORKTREE_BRANCH_NAME_PATTERN } from '../constants'
+import { listBindings, loadBinding, removeBinding, saveBinding } from '../storage'
+import { linkWorktreeDependencies, normalizeLinkDirectories, unlinkWorktreeDependencies } from './dependencies'
+import { removeDirectoryReliably } from './filesystem'
 import {
   applyStagedPatch,
   carryStagedChanges,
@@ -35,7 +36,7 @@ import {
   projectDirname,
   shortHead,
   stagedPatch,
-} from './git.js'
+} from './git'
 
 /** 计算 hash：项目路径 + 会话 ID → sha256 前 12 位。 */
 export function computeHash(projectPath: string, sessionId: string): string {
@@ -136,9 +137,15 @@ async function removeWorktreeOnDisk(
   path: string,
   hash: string,
   dirname: string,
+  linkDirectories: readonly string[] = [],
   signal?: AbortSignal,
 ): Promise<OperationResult> {
   await stopWorktreeProcesses(ctx, sessionId, path)
+
+  // 依赖目录是目录联接：先摘链接再删目录，确保 fs.rm 不会进入（也绝不删除）
+  // 源仓库的 node_modules。已独立安装的真实目录不受影响。
+  if (linkDirectories.length > 0)
+    await unlinkWorktreeDependencies(path, linkDirectories)
 
   try {
     await removeDirectoryReliably(path, worktreeTrashPath(worktreesRoot, hash, dirname))
@@ -153,6 +160,17 @@ async function removeWorktreeOnDisk(
   // Git is deliberately limited to metadata cleanup. It must never traverse
   // the worktree because old Git for Windows follows junction targets.
   return pruneWorktreeAdmin(root, signal)
+}
+
+/**
+ * 删除工作树时需要断开的依赖链接目录：binding 记录 ∪ 当前配置，回退默认 node_modules。
+ * 旧 ledger 没有 linkedDependencies，但可能仍残留 node_modules 链接，故回退默认值。
+ */
+function removalLinkDirectories(binding: Binding, configured?: readonly string[]): string[] {
+  const configuredDirectories = normalizeLinkDirectories(configured)
+  if (!binding.linkedDependencies || binding.linkedDependencies.length === 0)
+    return configuredDirectories
+  return normalizeLinkDirectories([...binding.linkedDependencies, ...configuredDirectories])
 }
 
 async function deleteOwnedBranch(root: string, branch: string, signal?: AbortSignal): Promise<OperationResult> {
@@ -192,6 +210,9 @@ export async function ensureWorktree(
   const hash = computeHash(projectPath, sessionId)
   const dirname = projectDirname(projectPath)
   const path = worktreePath(worktreesRoot, hash, dirname)
+  // 依赖链接配置在建/删两条路径上共用：创建时建立，删除前断开。
+  const linkDirectories = normalizeLinkDirectories(opts.linkDependencyDirectories)
+  const linkDependencies = opts.linkDependencies !== false
 
   const existing = await loadBinding(worktreesRoot, sessionId)
   if (existing && !samePath(existing.worktreePath, path)) {
@@ -228,7 +249,7 @@ export async function ensureWorktree(
     }
     // State B: a prior interrupted removal left only the directory. Delete the
     // orphan before pruning metadata; prune alone never removes disk content.
-    const removed = await removeWorktreeOnDisk(ctx, sessionId, worktreesRoot, root, path, hash, dirname, opts.signal)
+    const removed = await removeWorktreeOnDisk(ctx, sessionId, worktreesRoot, root, path, hash, dirname, linkDirectories, opts.signal)
     if (!removed.ok)
       return { ok: false, error: `清理孤儿工作树目录失败：${removed.error}` }
   }
@@ -270,7 +291,7 @@ export async function ensureWorktree(
     const carried = await carryStagedChanges(root, path, { signal: opts.signal })
     if (!carried.ok) {
       const rollbackFailures: string[] = []
-      const removed = await removeWorktreeOnDisk(ctx, sessionId, worktreesRoot, root, path, hash, dirname, opts.signal)
+      const removed = await removeWorktreeOnDisk(ctx, sessionId, worktreesRoot, root, path, hash, dirname, linkDirectories, opts.signal)
       if (!removed.ok)
         rollbackFailures.push(`移除工作树失败：${removed.error}`)
       if (branchName) {
@@ -294,6 +315,27 @@ export async function ensureWorktree(
   log.push(`HEAD is now at ${await shortHead(path)} ${await headSubject(path)}`)
   log.push(`Worktree created at ${path}`)
 
+  // 依赖目录自动链接：工作树只检出 tracked 文件，node_modules 等被 gitignore 的目录
+  // 不会跟随。默认把源仓库的依赖目录以目录联接挂进工作树，使其开箱可用；安装类命令
+  // 执行前会先断开链接（见 apply.ts 的 tools/execute 钩子），从而物化为独立目录。
+  // 链接失败仅记录日志，绝不让工作树创建失败。
+  const linkedDependencies: string[] = []
+  if (linkDependencies) {
+    try {
+      const linked = await linkWorktreeDependencies(root, path, linkDirectories)
+      linkedDependencies.push(...linked.linked)
+      if (linked.linked.length > 0)
+        log.push(`Linked dependencies from the source repository (${linked.linked.join(', ')}); install will materialize an independent copy`)
+      for (const name of linked.skipped) {
+        if (existsSync(join(root, name)))
+          log.push(`Dependency directory already present, kept as-is (${name})`)
+      }
+    }
+    catch (error) {
+      log.push(`Dependency link skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   const binding = {
     sessionId,
     sourceSessionId: opts.sourceSessionId || sessionId,
@@ -305,6 +347,7 @@ export async function ensureWorktree(
     ownsBranch: Boolean(branchName),
     createdAt: new Date().toISOString(),
     log,
+    ...(linkedDependencies.length > 0 ? { linkedDependencies } : {}),
   }
   // 绑定落盘失败时回滚刚创建的 git worktree 与分支，避免留下未被 ledger 引用的
   // 孤儿目录。saveBinding 只原子写本会话自己的文件，不再整表读写；saveBinding 内部
@@ -314,7 +357,7 @@ export async function ensureWorktree(
   }
   catch {
     const rollbackFailures: string[] = []
-    const removed = await removeWorktreeOnDisk(ctx, sessionId, worktreesRoot, root, path, hash, dirname, opts.signal)
+    const removed = await removeWorktreeOnDisk(ctx, sessionId, worktreesRoot, root, path, hash, dirname, linkDirectories, opts.signal)
     if (!removed.ok)
       rollbackFailures.push(`移除工作树失败：${removed.error}`)
     if (branchName) {
@@ -388,6 +431,8 @@ export async function checkoutToLocal(
     return { ok: false, error: `工作树目录不存在：${binding.worktreePath}` }
 
   const root = binding.projectPath
+  // 删除工作树前需断开的依赖链接（binding 记录 ∪ 当前配置）。
+  const linkDirectories = removalLinkDirectories(binding, opts.linkDependencyDirectories)
   // 本地分支名完全使用调用方输入；UI 默认填 `dsh/`，但用户可删除该前缀。
   const branch = String(params.branch_name ?? binding.branchName ?? '').trim()
   if (!branch || branch.endsWith('/'))
@@ -526,6 +571,7 @@ export async function checkoutToLocal(
     binding.worktreePath,
     binding.hash,
     binding.dirname,
+    linkDirectories,
     opts.signal,
   )
   if (!removed.ok) {
@@ -550,13 +596,14 @@ export async function checkoutToLocal(
  * @param params 放弃参数（worktree_hash_dirname / sessionId）
  * @param opts 选项
  * @param opts.signal 可选取消信号
+ * @param opts.linkDependencyDirectories 删除前需断开的依赖链接目录名
  * @returns 放弃结果
  */
 export async function discardWorktree(
   ctx: HostContext,
   worktreesRoot: string,
   params: WorktreeParams,
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal, linkDependencyDirectories?: string[] } = {},
 ): Promise<OperationResult<{ worktreePath: string }>> {
   const { binding } = await resolveBinding(worktreesRoot, params.sessionId, params.worktreeHashDirname)
   if (!binding)
@@ -572,6 +619,7 @@ export async function discardWorktree(
     binding.worktreePath,
     binding.hash,
     binding.dirname,
+    removalLinkDirectories(binding, opts.linkDependencyDirectories),
     opts.signal,
   )
   if (!removed.ok)

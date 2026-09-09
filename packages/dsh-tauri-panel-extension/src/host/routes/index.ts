@@ -9,6 +9,7 @@
 
 import type { PanelExtensionHost, RouteRegistrar } from '../types/index.ts'
 import { withConnectionAuth } from 'dsh-tauri'
+import { dirname } from 'pathe'
 import { PLUGIN_NAME } from '../../shared/constants.ts'
 import { registerMcpRoutes } from './mcp.ts'
 import { registerRepositoryRoutes } from './repositories.ts'
@@ -30,7 +31,11 @@ export function mountPanelExtensionRoutes(host: PanelExtensionHost, config: Pane
 
   const disposers = [
     ...registerSkillRoutes(register, host, { remountProvider: config.remountProvider }),
-    ...registerMcpRoutes(register, { profileDirPath: config.profileDirPath }),
+    ...registerMcpRoutes(register, {
+      profileDirPath: config.profileDirPath,
+      // profileDirPath is always <DSH_HOME>/profiles/<profile>.
+      dshHomePath: dirname(dirname(config.profileDirPath)),
+    }),
     ...registerRepositoryRoutes(register, { remountProvider: config.remountProvider }),
     ...registerRestartRoute(register),
   ]

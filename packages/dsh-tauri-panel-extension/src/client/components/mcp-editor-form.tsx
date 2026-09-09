@@ -7,6 +7,9 @@
 import type { ReactElement } from 'react'
 import type { McpEditorMode, McpEditorState, Translate } from '../types'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useMountStyle } from 'dsh-tauri-ui/client'
+import { MCP_EDITOR_FORM_STYLE_ID } from '../constants'
+import mcpEditorFormStyle from './mcp-editor-form.cssr'
 
 export interface McpEditorFormProps {
   t: Translate
@@ -25,16 +28,17 @@ export interface McpEditorFormProps {
 }
 
 export function McpEditorForm(props: McpEditorFormProps): ReactElement {
+  useMountStyle(mcpEditorFormStyle, MCP_EDITOR_FORM_STYLE_ID)
   const { t, editor, mode, busy, pasteJson, pasteError, formError, onModeChange, onEditorChange, onPasteJsonChange, onPasteFill, onCancel, onSave } = props
   return (
-    <div className="dpte-form">
-      <div className="dpte-editorTabs" role="tablist" aria-label={t('addServer')}>
+    <div className="dshp-extension__form">
+      <div className="dshp-extension__editor-tabs" role="tablist" aria-label={t('addServer')}>
         {(['json', 'form'] as const).map(modeKey => (
           <button
             key={modeKey}
             type="button"
             role="tab"
-            className="dpte-editorTab"
+            className="dshp-extension__editor-tab"
             aria-selected={mode === modeKey}
             data-active={mode === modeKey ? 'true' : undefined}
             onClick={() => onModeChange(modeKey)}
@@ -45,37 +49,37 @@ export function McpEditorForm(props: McpEditorFormProps): ReactElement {
       </div>
       {mode === 'json'
         ? (
-            <div className="dpte-form" role="tabpanel">
-              <label className="dpte-label">
+            <div className="dshp-extension__form" role="tabpanel">
+              <label className="dshp-extension__label">
                 <span>{t('formatPaste')}</span>
                 <textarea
-                  className="dpte-textarea dpte-jsonEditor"
+                  className="dshp-extension__textarea dshp-extension__json-editor"
                   placeholder={'{\n  "mcpServers": {\n    "name": { "command": "npx", "args": ["-y", "@example/mcp-server"] }\n  }\n}\n'}
                   value={pasteJson}
                   onChange={event => onPasteJsonChange(event.target.value)}
                 />
               </label>
-              {pasteError !== null && <p className="dpte-formError">{pasteError}</p>}
-              <div className="dpte-cardRow">
+              {pasteError !== null && <p className="dshp-extension__form-error">{pasteError}</p>}
+              <div className="dshp-extension__card-row">
                 <Button variant="outline" size="sm" disabled={pasteJson.trim() === ''} onClick={onPasteFill}>{t('formatFill')}</Button>
               </div>
             </div>
           )
         : (
-            <div className="dpte-form" role="tabpanel">
-              <label className="dpte-label">
+            <div className="dshp-extension__form" role="tabpanel">
+              <label className="dshp-extension__label">
                 <span>{t('serverName')}</span>
                 <input
-                  className="dpte-input"
+                  className="dshp-extension__input"
                   value={editor.serverName}
                   disabled={editor.id !== ''}
                   onChange={event => onEditorChange({ serverName: event.target.value })}
                 />
               </label>
-              <label className="dpte-label">
+              <label className="dshp-extension__label">
                 <span>{t('transport')}</span>
                 <select
-                  className="dpte-select"
+                  className="dshp-extension__select"
                   value={editor.transport}
                   disabled={editor.id !== ''}
                   onChange={event => onEditorChange({ transport: event.target.value as McpEditorState['transport'] })}
@@ -87,37 +91,37 @@ export function McpEditorForm(props: McpEditorFormProps): ReactElement {
               {editor.transport === 'stdio'
                 ? (
                     <>
-                      <label className="dpte-label">
+                      <label className="dshp-extension__label">
                         <span>{t('command')}</span>
-                        <input className="dpte-input" value={editor.command} onChange={event => onEditorChange({ command: event.target.value })} />
+                        <input className="dshp-extension__input" value={editor.command} onChange={event => onEditorChange({ command: event.target.value })} />
                       </label>
-                      <label className="dpte-label">
+                      <label className="dshp-extension__label">
                         <span>{t('args')}</span>
-                        <textarea className="dpte-textarea" data-short="true" value={editor.args} onChange={event => onEditorChange({ args: event.target.value })} />
+                        <textarea className="dshp-extension__textarea" data-short="true" value={editor.args} onChange={event => onEditorChange({ args: event.target.value })} />
                       </label>
-                      <label className="dpte-label">
+                      <label className="dshp-extension__label">
                         <span>{t('envPairs')}</span>
-                        <textarea className="dpte-textarea" data-short="true" value={editor.env} onChange={event => onEditorChange({ env: event.target.value })} />
+                        <textarea className="dshp-extension__textarea" data-short="true" value={editor.env} onChange={event => onEditorChange({ env: event.target.value })} />
                       </label>
                     </>
                   )
                 : (
                     <>
-                      <label className="dpte-label">
+                      <label className="dshp-extension__label">
                         <span>{t('url')}</span>
-                        <input className="dpte-input" value={editor.url} onChange={event => onEditorChange({ url: event.target.value })} />
+                        <input className="dshp-extension__input" value={editor.url} onChange={event => onEditorChange({ url: event.target.value })} />
                       </label>
-                      <label className="dpte-label">
+                      <label className="dshp-extension__label">
                         <span>{t('headersPairs')}</span>
-                        <textarea className="dpte-textarea" data-short="true" value={editor.headers} onChange={event => onEditorChange({ headers: event.target.value })} />
+                        <textarea className="dshp-extension__textarea" data-short="true" value={editor.headers} onChange={event => onEditorChange({ headers: event.target.value })} />
                       </label>
                     </>
                   )}
             </div>
           )}
-      {formError !== null && <p className="dpte-formError">{formError}</p>}
-      <div className="dpte-cardRow">
-        <span className="dpte-spacer" />
+      {formError !== null && <p className="dshp-extension__form-error">{formError}</p>}
+      <div className="dshp-extension__card-row">
+        <span className="dshp-extension__spacer" />
         <Button variant="ghost" onClick={onCancel}>{t('cancel')}</Button>
         <Button variant="primary" disabled={busy} onClick={onSave}>{t('save')}</Button>
       </div>

@@ -1,7 +1,8 @@
 import type { ChangeEvent, ReactElement } from 'react'
 import type { PetListItem, PetSettingsProps, PresetDownloadProgress, PresetPetItem } from '../types'
+import { ArrowDownToLine, Icon, Plus, useMountStyle } from 'dsh-tauri-ui/client'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { BUILTIN_PET_ID, PET_DEFAULT_SIZE, PET_SIZE_MAX, PET_SIZE_MIN, PET_SIZE_STEP } from '../constants'
+import { PET_DEFAULT_SIZE, PET_SIZE_MAX, PET_SIZE_MIN, PET_SIZE_STEP } from '../constants'
 import { text, usePetLocale } from '../locales'
 import {
   downloadPresetPet,
@@ -15,10 +16,12 @@ import {
   setPetEnabled,
   setPetSize,
   showPet,
+  updatePresetPet,
 } from '../service/pet'
-import { beginPetStatusFetch, commitPetStatusFetch, getPetUiSnapshot, setPetStatus, subscribePetUi } from '../store'
-import { progressPercent, resolvePresetCardAction } from '../utils/preset-card'
-import { IconImport, IconPlus } from './icons'
+import { beginPetStatusFetch, commitPetStatusFetch, getPetUiSnapshot, setPetsAvailable, setPetStatus, subscribePetUi } from '../store'
+import { hasAvailablePets } from '../utils/availability'
+import { progressPercent, resolvePresetCardAction, resolvePresetCardUpdate } from '../utils/preset-card'
+import petSettingsStyle from './pet-settings.cssr'
 
 /** 预设宠物下载轮询间隔（ms）。 */
 const PRESET_DOWNLOAD_POLL_MS = 400
@@ -41,19 +44,24 @@ interface PetCardProps {
   sizeLabel?: string
   thumbnail?: string
   thumbnailType?: 'gif' | 'spritesheet'
+  /** 显示「更新」按钮（已安装且清单提示可更新；位于主动作左侧）。 */
+  updateDisabled?: boolean
+  updateLabel?: string
+  onUpdate?: () => void
 }
 
 function PetCard(props: PetCardProps): ReactElement {
   const actionClassName = props.active
-    ? 'dshpet-cardAction dshpet-cardActionActive'
-    : 'dshpet-cardAction'
+    ? 'dshp-pet__card-action dshp-pet__card-actionActive'
+    : 'dshp-pet__card-action'
+  const updateClassName = 'dshp-pet__card-action dshp-pet__card-actionUpdate'
   const thumbnailClassName = props.thumbnailType === 'spritesheet'
-    ? 'dshpet-cardThumb dshpet-cardThumbSprite'
-    : 'dshpet-cardThumb'
+    ? 'dshp-pet__card-thumb dshp-pet__card-thumbSprite'
+    : 'dshp-pet__card-thumb'
   const percent = props.progress ? progressPercent(props.progress) : null
 
   return (
-    <div className="dshpet-cardItem">
+    <div className="dshp-pet__card-item">
       {props.thumbnail
         ? props.thumbnailType === 'spritesheet'
           ? (
@@ -62,38 +70,55 @@ function PetCard(props: PetCardProps): ReactElement {
               </span>
             )
           : <img className={thumbnailClassName} src={props.thumbnail} alt="" aria-hidden="true" />
-        : <div className="dshpet-cardThumb dshpet-cardThumbPlaceholder" aria-hidden="true">PET</div>}
-      <span className="dshpet-cardBody">
-        <span className="dshpet-cardNameRow">
-          <span className="dshpet-cardName">{props.name}</span>
-          {props.sizeLabel ? <span className="dshpet-cardSize">{props.sizeLabel}</span> : null}
+        : <div className="dshp-pet__card-thumb dshp-pet__card-thumbPlaceholder" aria-hidden="true">PET</div>}
+      <span className="dshp-pet__card-body">
+        <span className="dshp-pet__card-nameRow">
+          <span className="dshp-pet__card-name">{props.name}</span>
+          {props.sizeLabel ? <span className="dshp-pet__cardsize">{props.sizeLabel}</span> : null}
         </span>
-        {props.desc ? <span className="dshpet-cardDesc">{props.desc}</span> : null}
+        {props.desc ? <span className="dshp-pet__card-desc">{props.desc}</span> : null}
         {props.progress
           ? (
               <span
-                className="dshpet-cardProgress"
+                className="dshp-pet__card-progress"
                 role="progressbar"
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={percent ?? undefined}
               >
                 <span
-                  className={percent === null ? 'dshpet-cardProgressFill dshpet-cardProgressIndeterminate' : 'dshpet-cardProgressFill'}
+                  className={percent === null ? 'dshp-pet__card-progressFill dshp-pet__card-progressIndeterminate' : 'dshp-pet__card-progressFill'}
                   style={percent === null ? undefined : { width: `${percent}%` }}
                 />
               </span>
             )
           : null}
       </span>
-      <button
-        type="button"
-        className={actionClassName}
-        disabled={props.disabled}
-        onClick={props.onAction}
-      >
-        {props.actionLabel}
-      </button>
+      <span className="dshp-pet__card-actions">
+        {/* 更新按钮只受更新自身条件约束（busy/下载中），不继承主动作
+            disabled（含已选）：默认宠物已启用时仍必须能更新
+            （update_preset_pet 会先停用、替换安装后再重新启用）。 */}
+        {props.onUpdate && props.updateLabel !== undefined
+          ? (
+              <button
+                type="button"
+                className={updateClassName}
+                disabled={props.updateDisabled === true}
+                onClick={props.onUpdate}
+              >
+                {props.updateLabel}
+              </button>
+            )
+          : null}
+        <button
+          type="button"
+          className={actionClassName}
+          disabled={props.disabled}
+          onClick={props.onAction}
+        >
+          {props.actionLabel}
+        </button>
+      </span>
     </div>
   )
 }
@@ -120,7 +145,16 @@ export function presetCardAction(
   return resolvePresetCardAction(item, active, progress)
 }
 
+/** 预设宠物卡片「更新」按钮显隐（已安装且可更新，且非下载中），见 utils/preset-card。 */
+export function presetCardUpdate(
+  item: Pick<PresetPetItem, 'installed' | 'update_available' | 'phase'>,
+  progress: PresetDownloadProgress | null | undefined,
+): boolean {
+  return resolvePresetCardUpdate(item, progress)
+}
+
 export function PetSettings(props: PetSettingsProps): ReactElement {
+  useMountStyle(petSettingsStyle, 'dsh-tauri-pet-settings-styles')
   usePetLocale()
   const { status } = useSyncExternalStore(subscribePetUi, getPetUiSnapshot, getPetUiSnapshot)
   const [tab, setTab] = useState<'pets' | 'codex'>('pets')
@@ -137,7 +171,7 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
   const committedSizeRef = useRef<number | null>(null)
   const enabled = Boolean(status?.enabled)
   const visible = Boolean(status?.visible)
-  const active = status?.active_pet ?? BUILTIN_PET_ID
+  const active = status?.active_pet ?? ''
   const statusSize = status?.pet_size ?? PET_DEFAULT_SIZE
 
   useEffect(() => {
@@ -150,6 +184,8 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
       const [nextPresetPets, nextStatus] = await Promise.all([fetchPresetPets(), fetchPetStatus()])
       cachedPresetPets = nextPresetPets
       setPresetPets(nextPresetPets)
+      // 下载完成会改变可用性（未安装→已安装），同步侧栏入口显隐（chat/codex 用缓存清单）。
+      setPetsAvailable(hasAvailablePets(nextPresetPets, cachedChatPets ?? [], cachedCodexPets ?? []))
       const revision = beginPetStatusFetch()
       commitPetStatusFetch(revision, nextStatus)
       setPetStatus(nextStatus)
@@ -201,6 +237,8 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
         setChatPets(nextChatPets)
         setCodexPets(nextCodexPets)
         setPresetPets(nextPresetPets)
+        // 同步侧栏入口显隐：无任何可用宠物（全新安装）时隐藏入口图标。
+        setPetsAvailable(hasAvailablePets(nextPresetPets, nextChatPets, nextCodexPets))
         // 跨挂载恢复进行中的下载：清单 phase 标记 downloading/extracting 的项重新轮询，
         // 避免「返回应用再进设置」丢失进度视图、重复点击触发 PET_PRESET_BUSY。
         // 占位进度先写入 downloads，让不确定进度条在第一次轮询返回前立即出现。
@@ -248,6 +286,30 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
         pollPresetDownload(id)
       else
         setError(text('downloadFailed'))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 更新已安装的预设宠物：走与首次下载完全相同的下载/解压流程（同一进度轮询）。
+   * 宿主侧在宠物正在使用时先强制停用，更新结束后自动重新启用（前端无需处理）。
+   */
+  async function startUpdate(id: string): Promise<void> {
+    if (busy)
+      return
+    setBusy(true)
+    setError(null)
+    try {
+      await updatePresetPet(id)
+      pollPresetDownload(id)
+    }
+    catch (updateError) {
+      if (String(updateError).includes('PET_PRESET_BUSY'))
+        pollPresetDownload(id)
+      else
+        setError(text('updateFailed'))
     }
     finally {
       setBusy(false)
@@ -351,7 +413,11 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
     setError(null)
     try {
       await importPet(file.name, await readAsBase64(file))
-      setCodexPets(await fetchPetList('codex'))
+      const nextCodexPets = await fetchPetList('codex')
+      cachedCodexPets = nextCodexPets
+      setCodexPets(nextCodexPets)
+      // 导入成功后本地宠物集合变化，同步侧栏入口显隐。
+      setPetsAvailable(hasAvailablePets(cachedPresetPets ?? [], cachedChatPets ?? [], nextCodexPets))
     }
     catch (importError) {
       console.error('[dsh-tauri-pet] import failed:', importError)
@@ -365,13 +431,14 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
   const petsPanel = (
     <>
       {busy && presetPets.length === 0 && chatPets.length === 0
-        ? <div className="dshpet-loading">{text('loading')}</div>
+        ? <div className="dshp-pet__loading">{text('loading')}</div>
         : (
-            <div className="dshpet-cards">
+            <div className="dshp-pet__cards">
               {presetPets.map((item) => {
                 const progress = downloads[item.id] ?? null
                 const action = presetCardAction(item, active, progress)
                 const downloading = action === 'downloading'
+                const canUpdate = resolvePresetCardUpdate(item, progress)
                 return (
                   <PetCard
                     key={item.id}
@@ -389,6 +456,9 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
                       else if (action === 'download')
                         void startDownload(item.id)
                     }}
+                    updateLabel={canUpdate ? text('update') : undefined}
+                    updateDisabled={busy || downloading}
+                    onUpdate={canUpdate ? () => { void startUpdate(item.id) } : undefined}
                   />
                 )
               })}
@@ -411,9 +481,9 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
   )
 
   const codexPanel = (
-    <div className="dshpet-cards">
+    <div className="dshp-pet__cards">
       {codexPets.length === 0
-        ? <div className="dshpet-empty">{text('emptyImported')}</div>
+        ? <div className="dshp-pet__empty">{text('emptyImported')}</div>
         : codexPets.map(item => (
             <PetCard
               key={item.id}
@@ -431,14 +501,14 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
   )
 
   return (
-    <div className="dshpet-page">
-      <div className="dshpet-tabs">
-        <div className="dshpet-tabList" role="tablist" aria-label={text('name')}>
+    <div className="dshp-pet__page">
+      <div className="dshp-pet__tabs">
+        <div className="dshp-pet__tab-list" role="tablist" aria-label={text('name')}>
           <button
             type="button"
             role="tab"
             aria-selected={tab === 'pets'}
-            className={tab === 'pets' ? 'dshpet-tabBtn dshpet-tabBtnActive' : 'dshpet-tabBtn'}
+            className={tab === 'pets' ? 'dshp-pet__tab-btn dshp-pet__tab-btnActive' : 'dshp-pet__tab-btn'}
             onClick={() => setTab('pets')}
           >
             Pets
@@ -447,28 +517,28 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
             type="button"
             role="tab"
             aria-selected={tab === 'codex'}
-            className={tab === 'codex' ? 'dshpet-tabBtn dshpet-tabBtnActive' : 'dshpet-tabBtn'}
+            className={tab === 'codex' ? 'dshp-pet__tab-btn dshp-pet__tab-btnActive' : 'dshp-pet__tab-btn'}
             onClick={() => setTab('codex')}
           >
             Codex
           </button>
         </div>
-        <div className="dshpet-tabTools">
+        <div className="dshp-pet__tab-tools">
           {tab === 'pets'
             ? (
                 <>
-                  <button type="button" className="dshpet-toolBtn" disabled={busy} onClick={() => { void createPet() }}>
-                    <IconPlus />
+                  <button type="button" className="dshp-pet__tool-btn" disabled={busy} onClick={() => { void createPet() }}>
+                    <Icon as={Plus} />
                     {text('create')}
                   </button>
-                  <button type="button" className="dshpet-toolBtn" disabled={busy} onClick={() => { void toggleVisibility() }}>
+                  <button type="button" className="dshp-pet__tool-btn" disabled={busy} onClick={() => { void toggleVisibility() }}>
                     {visible ? text('collapsePet') : text('wakePet')}
                   </button>
                 </>
               )
             : (
-                <label className="dshpet-toolBtn" aria-disabled={busy}>
-                  <IconImport />
+                <label className="dshp-pet__tool-btn" aria-disabled={busy}>
+                  <Icon as={ArrowDownToLine} />
                   {text('import')}
                   <input
                     type="file"
@@ -481,17 +551,17 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
               )}
         </div>
       </div>
-      <p className="dshpet-tabDesc">
+      <p className="dshp-pet__tab-desc">
         {tab === 'pets' ? text('tabInstalledDesc') : text('tabCodexDesc')}
       </p>
-      <div className="dshpet-divider" role="separator" />
+      <div className="dshp-pet__divider" role="separator" />
       {tab === 'pets' ? petsPanel : codexPanel}
-      {error ? <div className="dshpet-error" role="alert">{error}</div> : null}
-      <div className="dshpet-sizeRow">
-        <span className="dshpet-sizeLabel">{text('sizeLabel')}</span>
+      {error ? <div className="dshp-pet__error" role="alert">{error}</div> : null}
+      <div className="dshp-pet__size-row">
+        <span className="dshp-pet__size-label">{text('sizeLabel')}</span>
         <input
           type="range"
-          className="dshpet-sizeSlider"
+          className="dshp-pet__size-slider"
           min={PET_SIZE_MIN}
           max={PET_SIZE_MAX}
           step={PET_SIZE_STEP}
@@ -504,7 +574,7 @@ export function PetSettings(props: PetSettingsProps): ReactElement {
           }}
         />
       </div>
-      <p className="dshpet-hint">{text('sizeHint')}</p>
+      <p className="dshp-pet__hint">{text('sizeHint')}</p>
     </div>
   )
 }

@@ -36,10 +36,12 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-primitives",
-        "dsh-tauri"
+        "dsh-tauri",
+        "dsh-tauri-ui"
       ],
       "external": [
-        "dsh-tauri/client"
+        "dsh-tauri/client",
+        "dsh-tauri-ui/client"
       ],
       "platform": "web"
     },
@@ -56,6 +58,7 @@
   },
   "dependencies": {
     "dsh-tauri": "workspace:*",
+    "dsh-tauri-ui": "workspace:*",
     "hookable": "catalog:utils",
     "pathe": "catalog:utils"
   },

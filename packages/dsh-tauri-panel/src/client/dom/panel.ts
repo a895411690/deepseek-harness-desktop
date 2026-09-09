@@ -5,7 +5,7 @@
  * setSidebarPanelActive 把面板激活态投影到侧栏根供跨插件样式协议使用。
  */
 
-import { PANEL_CLASSES, PANEL_DATA_ATTRIBUTES, SIDEBAR_INTERACTIVE_SELECTOR, SIDEBAR_KEEP_OPEN_SELECTOR, WORKSPACE_GROUP_SELECTOR } from '../constants'
+import { PANEL_DATA_ATTRIBUTES, SIDEBAR_INTERACTIVE_SELECTOR, SIDEBAR_KEEP_OPEN_SELECTOR, WORKSPACE_GROUP_SELECTOR } from '../constants'
 
 /**
  * 判断侧栏 pointerdown 是否代表离开当前面板的导航动作：
@@ -20,7 +20,7 @@ export function shouldClosePanelForSidebarTarget(target: Element | null): boolea
   const sidebar = target.closest(`[${PANEL_DATA_ATTRIBUTES.sidebar}]`)
   if (!sidebar)
     return false
-  if (target.closest(`[${PANEL_DATA_ATTRIBUTES.view}],[${PANEL_DATA_ATTRIBUTES.action}],.${PANEL_CLASSES.panelView}`))
+  if (target.closest(`[${PANEL_DATA_ATTRIBUTES.view}],[${PANEL_DATA_ATTRIBUTES.action}],.dshp-panel__panel-view`))
     return false
   if (target.closest(SIDEBAR_KEEP_OPEN_SELECTOR))
     return false
@@ -43,5 +43,3 @@ export function setSidebarPanelActive(active: boolean): void {
   else
     sidebar?.removeAttribute(PANEL_DATA_ATTRIBUTES.active)
 }
-
-export { PANEL_CLASSES }

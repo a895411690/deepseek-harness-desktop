@@ -18,7 +18,7 @@ import {
   migrateLegacyLedger,
   removeBinding,
   saveBinding,
-} from './index'
+} from '.'
 
 function tempRoot(): string {
   return join(tmpdir(), `dsh-worktree-storage-${randomUUID()}`)

@@ -10,14 +10,14 @@
  * 路由只接受同源 JSON POST（isSameOriginJsonRequest 校验）。
  */
 
-import type { HostContext, HostRoute } from './types.js'
+import type { HostContext, HostRoute } from './types'
 import { isSameOriginJsonRequest, openDirectory, openUrl, readJsonBody, respond, safeWebUrl, withConnectionAuth } from 'dsh-tauri'
 import {
   OPEN_PATH_ROUTE,
   OPEN_URL_ROUTE,
   RIGHTCLICK_API_PREFIX,
   RIGHTCLICK_PLUGIN_NAME,
-} from './constants.js'
+} from './constants'
 
 /** 插件名（诊断元数据，与导出的 name 一致）。 */
 export const name = RIGHTCLICK_PLUGIN_NAME

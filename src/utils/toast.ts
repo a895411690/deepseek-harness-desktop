@@ -80,9 +80,9 @@ export const toast = Object.assign(
     const key = activeQueues[placement].add(content, {
       timeout,
       onClose: () => {
-        // 自动超时 / 用户关闭 / 外部 close 都会走到这里（HeroUI 包了一层 rAF 异步）
+        // 自动超时 / 用户关闭 / 外部 close 都会走到这里；延后业务回调，避免渲染中更新组件。
         forgetKey(key)
-        onClose?.()
+        queueMicrotask(() => onClose?.())
       },
     })
     toastContents.set(key, content)

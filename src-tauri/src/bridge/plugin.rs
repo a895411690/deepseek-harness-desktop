@@ -221,9 +221,18 @@ pub fn disable_dsh_plugin(app_handle: AppHandle, id: String) -> Result<(), Strin
 }
 
 /// 启用单个已禁用的插件：加回 `dsh.profile.bundles` 并从独立禁用清单移除。
+///
+/// 若插件同时被 profile 的 `cordis.patch.yml` 配置覆盖禁用（`disabled: true`，
+/// 优先级高于桌面禁用清单），必须显式传 `clear_config_override=true`（前端
+/// 弹窗确认后）才会移除该覆盖；否则返回 `ENABLE_CONFIG_OVERRIDE`，避免
+/// 「声称启用成功、运行期却仍被配置禁用」的虚假成功（issue #399）。
 #[tauri::command]
-pub fn enable_dsh_plugin(app_handle: AppHandle, id: String) -> Result<(), String> {
-    plugin::enable(&app_handle, &id)?;
+pub fn enable_dsh_plugin(
+    app_handle: AppHandle,
+    id: String,
+    clear_config_override: Option<bool>,
+) -> Result<(), String> {
+    plugin::enable(&app_handle, &id, clear_config_override.unwrap_or(false))?;
     plugin::watch::force_emit(&app_handle);
     Ok(())
 }

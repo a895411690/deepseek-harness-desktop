@@ -1,22 +1,56 @@
-/** types/runtime.ts — 宿主运行时快照与槽位注入类型。 */
+/**
+ * client/types/runtime.ts — 工作树客户端协议与官方 controller 类型。
+ *
+ * 【来源】官方 `dsh-tauri/client` 的 `ISessions`、`IWorkspaces`、
+ * `SessionListState`、`WorkspaceSnapshot`、`WorkspaceView`。
+ * 【版本】@deepseek-ai/dsh-api-session-controller@0.1.2-alpha.3；
+ * @deepseek-ai/dsh-api-workspace-controller@0.1.2-alpha.3。
+ * 【修订】2026-01：官方 branded id 在 DOM/HTTP 字符串边界通过本地 adapter 投影，
+ * 删除原先把官方服务重新手写成无来源运行时接口的做法。
+ */
 
-export interface InputState {
-  draft: string
-  imageIds: string[]
+import type { SessionListState } from 'dsh-tauri/client'
+
+export type { SessionListState }
+
+/** Stable local projection used at the worktree's string-id boundary. */
+export interface WorkspaceView {
+  workspaceId: string
+  path: string
+  sessionIds: readonly string[]
 }
 
+export interface WorkspaceSnapshot {
+  items: readonly WorkspaceView[]
+}
+
+/**
+ * 输入条草稿状态。字段名跨核心版本不一致，两个都声明为可选：
+ *   - rc.x 及更早：`imageIds`
+ *   - 0.1.5-alpha.1 起：`attachmentIds`
+ * 消费方必须经 `utils/draft-attachments.ts` 的兼容读取函数访问，不能直接取单一字段。
+ */
+export interface InputState {
+  draft: string
+  imageIds?: string[]
+  attachmentIds?: string[]
+}
+
+/** 输入条动作面；同样按核心版本二选一（rc.x 的 addImages/removeImage ↔ alpha 的 addAttachments/removeAttachment）。 */
 export interface InputActions {
   setDraft: (text: string) => void
-  addImages: (ids: string[]) => boolean
-  removeImage: (id: string) => void
+  addImages?: (ids: string[]) => boolean
+  removeImage?: (id: string) => void
+  addAttachments?: (ids: string[]) => boolean
+  removeAttachment?: (id: string) => void
   submit: () => void
 }
 
+/** 工作树 DOM/槽位 adapter：内部把字符串 id 转换到官方 branded controller。 */
 export interface SessionsRuntime {
   create: (opts: { cwd: string, sessionId: string }) => Promise<string>
   open: (sessionId: string) => void
   provideInfo: (sessionId: string) => { props?: { inputActions?: InputActions } } | undefined
-  /** 刷新会话列表（宿主侧 seed 创建的会话会发布进来；本插件在 waitForSessionListed 中调用）。 */
   refresh: () => Promise<void>
   list: { getSnapshot: () => { ids: string[], current?: string } }
 }
@@ -34,12 +68,14 @@ export interface SurfaceBarProps {
   sessionId: string
 }
 
+/** 官方 WorkspaceView 的工作树消费投影；id 在 adapter 边界保持字符串。 */
 export interface WorkspaceSessionOrder {
   workspaceId: string
   path: string
   sessionIds: readonly string[]
 }
 
+/** 工作树调用的官方 Workspace controller adapter。 */
 export interface WorkspacesRuntime {
   archiveSession: (sessionId: string) => Promise<void>
   list: { getSnapshot: () => { items: WorkspaceSessionOrder[] } }
@@ -56,6 +92,7 @@ export interface WorktreeDialogProps {
   workspacesRuntime: WorkspacesRuntime
 }
 
+/** 官方 SessionListState 的工作树 adapter 子集。 */
 export interface DialogListState {
   phase: string
   current?: string

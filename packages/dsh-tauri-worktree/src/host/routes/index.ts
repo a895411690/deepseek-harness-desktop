@@ -6,18 +6,18 @@
  * status 的 isGit 判定遵守「会话未知时不猜测」的竞态语义（isGit: null）。
  */
 
-import type { HostContext, PluginConfig } from '../types/index.js'
+import type { HostContext, PluginConfig } from '../types'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { routeHandler, withConnectionAuth } from 'dsh-tauri'
 import { join } from 'pathe'
-import { WORKTREE_API_PREFIX } from '../../shared/constants.js'
-import { gitToplevel } from '../service/git.js'
-import { checkoutToLocalAndHandback, inheritSessionIntoWorktree } from '../service/handoff.js'
-import { discardWorktree, ensureWorktree, worktreeKey, worktreePath } from '../service/operation.js'
-import { findSession, resolveProjectPath } from '../service/session.js'
-import { loadBinding, assertSafeSessionId } from '../storage/index.js'
+import { WORKTREE_API_PREFIX } from '../../shared/constants'
+import { gitToplevel } from '../service/git'
+import { checkoutToLocalAndHandback, inheritSessionIntoWorktree } from '../service/handoff'
+import { discardWorktree, ensureWorktree, worktreeKey, worktreePath } from '../service/operation'
+import { findSession, resolveProjectPath } from '../service/session'
+import { loadBinding, assertSafeSessionId } from '../storage'
 
 /** 路由层统一校验 sessionId 合法性；非法返回 400，合法返回原值。 */
 function safeSessionIdOr400(sessionId: string): string | [400, { error: string }] {
@@ -71,7 +71,7 @@ export function buildRoutes(ctx: HostContext, config: PluginConfig): any[] {
         const result = await discardWorktree(ctx, worktreesRoot, {
           sessionId: job.sessionId,
           worktree_hash_dirname: worktreeHashDirname,
-        })
+        }, { linkDependencyDirectories: config.linkDependencyDirectories })
         if (result.ok) {
           const updated: DiscardJob = { ...job, state: 'completed' }
           discardJobs.set(job.jobId, updated)
@@ -160,6 +160,8 @@ export function buildRoutes(ctx: HostContext, config: PluginConfig): any[] {
         const r = await ensureWorktree(ctx, worktreesRoot, projectPath, safeSessionId, {
           sourceSessionId,
           carryStaged: body.carryStaged === true,
+          linkDependencies: config.linkDependencies,
+          linkDependencyDirectories: config.linkDependencyDirectories,
         })
         if (!r.ok)
           return [400, { error: r.error }]
@@ -221,7 +223,10 @@ export function buildRoutes(ctx: HostContext, config: PluginConfig): any[] {
           sessionId: String(body.sessionId ?? ''),
           worktree_hash_dirname: String(body.worktreeHashDirname ?? ''),
           branch_name: String(body.branchName ?? ''),
-        }, { carryStaged: body.carryStaged === true })
+        }, {
+          carryStaged: body.carryStaged === true,
+          linkDependencyDirectories: config.linkDependencyDirectories,
+        })
         if (!r.ok)
           return [400, { error: r.error }]
         return [200, {

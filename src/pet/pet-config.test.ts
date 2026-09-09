@@ -1,12 +1,15 @@
 import type { PetCategory, PetWeights } from './pet-config'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  fallbackPresetName,
+  isLoopingAnimation,
   pick,
   pickCategoryAction,
   pickWeightedCategory,
   poolEntryToStatus,
   resolvePresetName,
   rollKind,
+  spriteStatusFallback,
 } from './pet-config'
 
 const WEIGHTS: PetWeights = { idle: 10, turn: 5, move: 5 }
@@ -112,8 +115,14 @@ describe('resolvePresetName', () => {
     '东张西望': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E4%B8%9C.webm',
     '被鼠标拖拽悬空反馈': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E8%A2%AB.webm',
     '点击回应-开心跃动': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E5%BC%80.webm',
-    // DSH 会话状态叠加映射名（与旧内置 maid-*.webm 一一对应）
-    '深度思考碎碎念': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E6%B7%B1.webm',
+    // DSH 细分工作状态档位叠加映射名（e1ff8c1 起的 6 个新 webm）
+    '工作状态-思考冒泡': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E6%80%9D.webm',
+    '工作状态-忙碌点按': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E5%BF%99.webm',
+    '工作状态-清点归档': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E6%B8%85.webm',
+    '工作状态-原地踱步张望': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E8%B8%B1.webm',
+    '工作状态-雀跃庆祝': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E9%9B%80.webm',
+    '工作状态-垂头叹气冒汗': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E5%9E%82.webm',
+    // 旧粗态兼容映射名
     '写代码': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E5%86%99.webm',
     '轻快记录': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E8%BD%BB.webm',
     '玩游戏气急败坏': 'dsh-pet://localhost/maid-deepseek-whale/webm/%E6%B0%94.webm',
@@ -134,10 +143,41 @@ describe('resolvePresetName', () => {
   })
 
   it('maps session statuses to the DSH overlay animation names', () => {
-    expect(resolvePresetName('waiting', pools, assets)).toBe('深度思考碎碎念')
+    // 细分工作状态档位（e1ff8c1 起的 6 个新 webm）
+    expect(resolvePresetName('thinking', pools, assets)).toBe('工作状态-思考冒泡')
+    expect(resolvePresetName('working', pools, assets)).toBe('工作状态-忙碌点按')
+    expect(resolvePresetName('result', pools, assets)).toBe('工作状态-清点归档')
+    expect(resolvePresetName('waiting', pools, assets)).toBe('工作状态-原地踱步张望')
+    expect(resolvePresetName('success', pools, assets)).toBe('工作状态-雀跃庆祝')
+    expect(resolvePresetName('error', pools, assets)).toBe('工作状态-垂头叹气冒汗')
+    // 旧粗态兼容映射
     expect(resolvePresetName('running', pools, assets)).toBe('写代码')
     expect(resolvePresetName('review', pools, assets)).toBe('轻快记录')
     expect(resolvePresetName('failed', pools, assets)).toBe('玩游戏气急败坏')
+  })
+
+  it('isLoopingAnimation：细分非终态档与 idle/running 循环，终态档与 review/failed 播一次', () => {
+    expect(isLoopingAnimation('idle')).toBe(true)
+    expect(isLoopingAnimation('thinking')).toBe(true)
+    expect(isLoopingAnimation('working')).toBe(true)
+    expect(isLoopingAnimation('result')).toBe(true)
+    expect(isLoopingAnimation('waiting')).toBe(true)
+    expect(isLoopingAnimation('running')).toBe(true)
+    expect(isLoopingAnimation('success')).toBe(false)
+    expect(isLoopingAnimation('error')).toBe(false)
+    expect(isLoopingAnimation('review')).toBe(false)
+    expect(isLoopingAnimation('failed')).toBe(false)
+    expect(isLoopingAnimation('waving')).toBe(false)
+  })
+
+  it('spriteStatusFallback：自定义图集无细分档行，近似映射到既有行', () => {
+    expect(spriteStatusFallback('thinking')).toBe('waiting')
+    expect(spriteStatusFallback('working')).toBe('running')
+    expect(spriteStatusFallback('result')).toBe('review')
+    expect(spriteStatusFallback('success')).toBe('waving')
+    expect(spriteStatusFallback('error')).toBe('failed')
+    expect(spriteStatusFallback('idle')).toBe('idle')
+    expect(spriteStatusFallback('running')).toBe('running')
   })
 
   it('returns null for session statuses whose overlay asset is missing', () => {
@@ -149,5 +189,43 @@ describe('resolvePresetName', () => {
   it('returns null when the pool entry is not backed by an asset', () => {
     expect(resolvePresetName('idle', { ...pools, idlePool: ['不存在.webm'] }, assets)).toBeNull()
     expect(resolvePresetName('idle', { ...pools, idlePool: [] }, assets)).toBeNull()
+  })
+})
+
+describe('fallbackPresetName', () => {
+  // 旧预设（e1ff8c1 资产差集前的安装）：无 工作状态-*，但有待机与写代码。
+  const stale: Record<string, string> = {
+    待机呼吸休闲: 'dsh-pet://localhost/maid-deepseek-whale/webm/idle.webm',
+    写代码: 'dsh-pet://localhost/maid-deepseek-whale/webm/code.webm',
+  }
+  const pools = { idlePool: ['待机呼吸休闲'] } as const
+
+  it('降级细分工作档到粗态写代码（资产缺失时不再卡旧循环）', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.0)
+    expect(fallbackPresetName('thinking', pools, stale)).toBe('写代码')
+    expect(fallbackPresetName('working', pools, stale)).toBe('写代码')
+    expect(fallbackPresetName('result', pools, stale)).toBe('写代码')
+    expect(fallbackPresetName('waiting', pools, stale)).toBe('写代码')
+    expect(fallbackPresetName('running', pools, stale)).toBe('写代码')
+    vi.restoreAllMocks()
+  })
+
+  it('细分档资产存在时无需降级（fallback 只作 resolve 失败的后备）', () => {
+    expect(fallbackPresetName('thinking', pools, { '待机呼吸休闲': 'idle.webm', '工作状态-思考冒泡': 'think.webm', '写代码': 'code.webm' })).toBe('写代码')
+  })
+
+  it('终态档/其他状态降到待机池', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.0)
+    expect(fallbackPresetName('success', pools, stale)).toBe('待机呼吸休闲')
+    expect(fallbackPresetName('error', pools, stale)).toBe('待机呼吸休闲')
+    expect(fallbackPresetName('review', pools, stale)).toBe('待机呼吸休闲')
+    expect(fallbackPresetName('failed', pools, stale)).toBe('待机呼吸休闲')
+    expect(fallbackPresetName('bubble', pools, stale)).toBe('待机呼吸休闲')
+    vi.restoreAllMocks()
+  })
+
+  it('待机池也无资产时返回 null（调用方保持当前动画）', () => {
+    expect(fallbackPresetName('working', pools, {})).toBeNull()
+    expect(fallbackPresetName('working', { idlePool: [] }, {})).toBeNull()
   })
 })

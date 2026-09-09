@@ -17,14 +17,16 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
  */
 import type { ClientContext } from 'dsh-tauri/client'
 import { SlotOutlet } from '@deepseek-ai/dsh-client-ui-renderer'
-import { installPanelLocale } from './locales'
-import { installPanelService } from './register/panel-service'
-import { installSidebarRoot } from './register/sidebar'
-import { mountPanelStyles } from './styles'
+import { mountStyle } from 'dsh-tauri-ui/client'
+import { PANEL_STYLE_ID } from './constants'
+import { registerPanelLocale } from './locales'
+import { registerPanelService } from './register/panel-service'
+import { registerSidebarRoot } from './register/sidebar'
+import panelIndexStyle from './styles/index.cssr'
 
-export type { IconProps } from './components/icons'
 export { PANEL_PROTOCOL_SERVICE } from './constants'
 export type { PanelActionItemProps, PanelContentSpec, SidebarRootProps } from './types'
+export type { IconProps } from 'dsh-tauri-ui/client'
 
 /** 插件显示名（诊断元数据）。 */
 export const name = 'dsh-tauri-panel'
@@ -44,13 +46,13 @@ export const inject = ['slots', 'layout', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(
-    () => mountPanelStyles(),
+    () => mountStyle(panelIndexStyle, PANEL_STYLE_ID),
     'dsh-tauri-panel: styles',
   )
-  installPanelLocale(ctx)
+  registerPanelLocale(ctx)
   // 面板协议宿主服务（panel.protocol：ActionItem + renderPanelContent）：
   // 只走 slots runtime，不依赖 renderer 补丁——无补丁时内容区替换仍可用。
-  installPanelService(ctx)
+  registerPanelService(ctx)
 
   // 侧栏面板依赖 renderer 补丁导出的 <SlotOutlet>；无补丁时不注册任何条目，
   // 官方侧栏原样工作。
@@ -61,5 +63,5 @@ export function apply(ctx: ClientContext): void {
     return
   }
 
-  installSidebarRoot(ctx)
+  registerSidebarRoot(ctx)
 }

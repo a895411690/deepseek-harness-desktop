@@ -70,7 +70,12 @@ struct PresetPetSpec {
     size_mb: Option<f64>,
 }
 
-/// 设置页可展示的清单条目（含本机安装状态与进行中的下载阶段）。
+/// 已安装预设宠物的版本记录文件名（安装目录根下，记录安装时的 ref）。
+/// 设置页据此判断「是否有更新」：清单 ref 与安装记录不一致（或旧安装无记录）
+/// 时给出更新入口。
+const PRESET_REF_FILE: &str = ".preset-ref";
+
+/// 设置页可展示的清单条目（含本机安装状态、版本更新提示与进行中的下载阶段）。
 #[derive(Debug, Clone, Serialize)]
 pub struct PresetPetListItem {
     pub id: String,
@@ -79,6 +84,9 @@ pub struct PresetPetListItem {
     pub image: Option<String>,
     pub size_mb: Option<f64>,
     pub installed: bool,
+    /// 已安装且清单 ref 与安装记录不同（或无记录）→ 可更新。
+    /// 清单未固定 ref（跟随 main）时恒为 false，无法检测差异。
+    pub update_available: bool,
     /// 当前下载阶段（idle | downloading | extracting | done | failed）。
     /// 设置页跨挂载恢复「下载中」视图用：返回应用再进设置时，进程内注册表仍保留
     /// 进行中的下载阶段，前端据此显示进度条并自动恢复轮询。
@@ -167,6 +175,44 @@ fn installed_dir(root: &Path, id: &str) -> PathBuf {
     root.join(id)
 }
 
+/// 清单条目实际下载/安装所用的引用：固定 ref，缺省回退 `main`。
+fn preset_reference(spec: &PresetPetSpec) -> String {
+    spec.r#ref
+        .clone()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "main".to_string())
+}
+
+/// 读取已安装宠物目录的版本记录（`.preset-ref`）；缺失或内容为空白返回 None。
+/// 旧安装（记录功能上线前下载的）无此文件，视为「未知版本」而非「最新」。
+fn read_installed_ref(dir: &Path) -> Option<String> {
+    let value = fs::read_to_string(dir.join(PRESET_REF_FILE)).ok()?;
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// 在安装目录写入 ref 版本记录（安装/更新成功后调用，供后续更新检测）。
+fn write_installed_ref(dir: &Path, reference: &str) -> Result<(), String> {
+    fs::write(dir.join(PRESET_REF_FILE), reference).map_err(|error| {
+        format!(
+            "PET_PRESET_REF_WRITE_FAILED: failed to write {}: {error}",
+            dir.join(PRESET_REF_FILE).display()
+        )
+    })
+}
+
+/// 是否可更新：已安装，且清单 ref 与安装记录不一致（或无记录）。
+/// 清单未固定 ref（跟随 main 分支）时无法判断差异，恒为 false。
+fn preset_update_available(installed: bool, catalog_ref: Option<&str>, installed_ref: Option<&str>) -> bool {
+    if !installed {
+        return false;
+    }
+    match catalog_ref.filter(|value| !value.is_empty()) {
+        None => false,
+        Some(catalog) => installed_ref.as_deref() != Some(catalog),
+    }
+}
+
 pub(crate) fn safe_preset_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
@@ -200,11 +246,7 @@ fn parse_repo_owner(url: &str) -> Result<(String, String), String> {
 /// 构造仓库 tarball 下载地址（codeload 直连 + ghfast.top 镜像兜底）。
 fn tarball_urls(spec: &PresetPetSpec) -> Result<Vec<String>, String> {
     let (owner, repo) = parse_repo_owner(&spec.repo)?;
-    let reference = spec
-        .r#ref
-        .clone()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "main".to_string());
+    let reference = preset_reference(spec);
     if reference.contains('/') || reference.contains('\\') || reference.contains("..") {
         return Err("PET_PRESET_REF_INVALID: ref must be a plain commit or branch name".to_string());
     }
@@ -574,8 +616,48 @@ async fn download_tarball(
     Err(last_error)
 }
 
-/// 后台安装流程：下载 → 解压 assets → 校验 → staging 原子 rename。
-async fn run_preset_download(app: &AppHandle, spec: PresetPetSpec) -> Result<(), String> {
+/// 把 staging 安装到 target：
+/// - 首次安装（target 不存在）直接 rename；
+/// - 更新安装（target 存在且 `replace`）：两步 rename（旧目录→备份、staging→target）
+///   原子换新，任一步失败回滚备份，成功后清理备份目录。
+fn install_staging(
+    root: &Path,
+    id: &str,
+    nonce: u128,
+    staging: &Path,
+    target: &Path,
+    replace: bool,
+) -> Result<(), String> {
+    if !target.exists() {
+        return fs::rename(staging, target).map_err(|error| {
+            format!("PET_PRESET_INSTALL_FAILED: failed to install preset pet: {error}")
+        });
+    }
+    if !replace {
+        return Err(format!(
+            "PET_PRESET_ALREADY_INSTALLED: preset pet {} is already installed",
+            id
+        ));
+    }
+    let backup = root.join(format!(".preset-backup-{id}-{nonce}"));
+    fs::rename(target, &backup).map_err(|error| {
+        format!(
+            "PET_PRESET_INSTALL_FAILED: failed to back up existing preset pet: {error}"
+        )
+    })?;
+    if let Err(error) = fs::rename(staging, target) {
+        // 新目录就位失败：回滚备份，保留旧版本完整可用（宁可更新失败也不丢宠物）。
+        let _ = fs::rename(&backup, target);
+        return Err(format!(
+            "PET_PRESET_INSTALL_FAILED: failed to install updated preset pet: {error}"
+        ));
+    }
+    let _ = fs::remove_dir_all(&backup);
+    Ok(())
+}
+
+/// 后台安装流程：下载 → 解压 assets → 校验 → staging 原子安装（首次或替换）。
+async fn run_preset_download(app: &AppHandle, spec: PresetPetSpec, replace: bool) -> Result<(), String> {
     let root = preset_pets_root(app);
     fs::create_dir_all(&root).map_err(|error| {
         format!("PET_PRESET_DIR_FAILED: failed to create pets directory: {error}")
@@ -596,7 +678,7 @@ async fn run_preset_download(app: &AppHandle, spec: PresetPetSpec) -> Result<(),
             .map(|mb| (mb * 1024.0 * 1024.0).round() as u64)
             .unwrap_or(0);
         log::info!(
-            "[preset-pet] install {}: start (assets={:?}, estimated {estimated_total} bytes)",
+            "[preset-pet] install {}: start (assets={:?}, estimated {estimated_total} bytes, replace={replace})",
             spec.id,
             spec.assets
         );
@@ -628,15 +710,9 @@ async fn run_preset_download(app: &AppHandle, spec: PresetPetSpec) -> Result<(),
         log::info!("[preset-pet] install {}: tarball extracted", spec.id);
         validate_preset_config(&staging)?;
         let target = installed_dir(&root, &spec.id);
-        if target.exists() {
-            return Err(format!(
-                "PET_PRESET_ALREADY_INSTALLED: preset pet {} is already installed",
-                spec.id
-            ));
-        }
-        fs::rename(&staging, &target).map_err(|error| {
-            format!("PET_PRESET_INSTALL_FAILED: failed to install preset pet: {error}")
-        })?;
+        install_staging(&root, &spec.id, nonce, &staging, &target, replace)?;
+        // 版本记录：供设置页检测更新（清单 ref 与记录不一致时提示可更新）。
+        write_installed_ref(&target, &preset_reference(&spec))?;
         log::info!(
             "[preset-pet] install {}: installed at {}",
             spec.id,
@@ -653,7 +729,7 @@ async fn run_preset_download(app: &AppHandle, spec: PresetPetSpec) -> Result<(),
     result
 }
 
-/// 列出预设宠物清单（含安装状态）。
+/// 列出预设宠物清单（含安装状态与版本更新提示）。
 #[tauri::command]
 pub fn list_preset_pets(app: AppHandle) -> Result<Vec<PresetPetListItem>, String> {
     let catalog = read_preset_catalog(&app)?;
@@ -674,8 +750,11 @@ pub fn list_preset_pets(app: AppHandle) -> Result<Vec<PresetPetListItem>, String
             ));
         }
         let phase = get_preset_progress(&spec.id).phase;
+        let installed = installed_dir(&root, &spec.id).is_dir();
+        let installed_ref = installed.then(|| read_installed_ref(&installed_dir(&root, &spec.id))).flatten();
         items.push(PresetPetListItem {
-            installed: installed_dir(&root, &spec.id).is_dir(),
+            installed,
+            update_available: preset_update_available(installed, spec.r#ref.as_deref(), installed_ref.as_deref()),
             id: spec.id,
             name: spec.name,
             desc: spec.desc,
@@ -714,7 +793,7 @@ pub fn download_preset_pet(app: AppHandle, id: String) -> Result<(), String> {
     );
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let progress = match run_preset_download(&app, spec).await {
+        let progress = match run_preset_download(&app, spec, false).await {
             Ok(()) => PresetDownloadProgress {
                 phase: "done".to_string(),
                 received: 0,
@@ -729,6 +808,86 @@ pub fn download_preset_pet(app: AppHandle, id: String) -> Result<(), String> {
             },
         };
         set_preset_progress(&id, progress);
+    });
+    Ok(())
+}
+
+/// 更新已安装的预设宠物（后台执行，立即返回；进度用轮询查询）。
+///
+/// 需求语义：
+/// 1. 仅对「已安装」开放（未安装走 `download_preset_pet`）；
+/// 2. 若该宠物正在使用（激活且启用）则先强制停用（隐藏桌宠窗口），避免更新
+///    替换媒体文件时窗口仍在按旧 URL 流式读取；
+/// 3. 走与首次下载完全相同的下载/解压/校验流程（替换模式：旧目录备份 → 新目录
+///    原子换入，失败回滚保旧版本可用），完成后写 `.preset-ref` 版本记录；
+/// 4. 更新结束（无论成败）后若该宠物此前正在使用，重新启用桌宠。若失败则
+///    旧版本仍可用，重新启用后食用旧版本（下一次更新再试）。
+#[tauri::command]
+pub fn update_preset_pet(app: AppHandle, id: String) -> Result<(), String> {
+    let id = id.trim().to_string();
+    let catalog = read_preset_catalog(&app)?;
+    let spec = catalog
+        .into_iter()
+        .find(|entry| entry.id == id)
+        .ok_or_else(|| format!("PET_PRESET_NOT_FOUND: preset pet {id} is not in the catalog"))?;
+    let root = preset_pets_root(&app);
+    if !installed_dir(&root, &id).is_dir() {
+        return Err(format!("PET_PRESET_NOT_INSTALLED: preset pet {id} is not installed"));
+    }
+    if get_preset_progress(&id).phase == "downloading" || get_preset_progress(&id).phase == "extracting" {
+        return Err(format!("PET_PRESET_BUSY: preset pet {id} is already downloading"));
+    }
+
+    // 快照「是否正在使用该宠物」：激活 id 相同且桌宠启用。使用中则先强制停用，
+    // 更新结束后恢复启用（无论成败：失败时旧版本仍在，继续可用）。
+    let status = crate::bridge::pet::get_pet_status(app.clone());
+    let was_active = status.active_pet == id;
+    let was_enabled = status.enabled && was_active;
+    if was_enabled {
+        log::info!("[preset-pet] update {id}: pet in use, disabling pet window during update");
+        crate::bridge::pet::set_pet_enabled(app.clone(), false)?;
+    }
+
+    set_preset_progress(
+        &id,
+        PresetDownloadProgress {
+            phase: "downloading".to_string(),
+            received: 0,
+            total: 0,
+            error: None,
+        },
+    );
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let progress = match run_preset_download(&app, spec, true).await {
+            Ok(()) => PresetDownloadProgress {
+                phase: "done".to_string(),
+                received: 0,
+                total: 0,
+                error: None,
+            },
+            Err(error) => PresetDownloadProgress {
+                phase: "failed".to_string(),
+                received: 0,
+                total: 0,
+                error: Some(error),
+            },
+        };
+        let next_phase = progress.phase.clone();
+        set_preset_progress(&id, progress);
+        if next_phase == "done" {
+            // 资源换新后重载桌宠窗口：URL 不变但文件已替换，WebView 缓存可能命中
+            // 旧 webm。哪怕当前未启用（窗口隐藏）也重载——页面重新加载后按
+            // get_pet_status 维持隐藏状态，下次启用时直接呈现新资源。
+            crate::desktop::pet::reload_pet_window(&app);
+        }
+        // 更新前在用 → 重新启用桌宠窗口（新文件已就位，或旧版本被回滚后继续可用）。
+        if was_enabled {
+            log::info!("[preset-pet] update {id}: re-enabling pet window after update");
+            if let Err(error) = crate::bridge::pet::set_pet_enabled(app.clone(), true) {
+                log::warn!("[preset-pet] update {id}: failed to re-enable pet window: {error}");
+            }
+        }
     });
     Ok(())
 }
@@ -1588,5 +1747,89 @@ mod tests {
         assert!(stripped.contains("\"/* kept */\""));
         let parsed: Value = serde_json::from_str(&stripped).expect("valid JSON");
         assert_eq!(parsed["url"], "https://example.com/a//b");
+    }
+
+    #[test]
+    fn installed_ref_round_trips_and_handles_missing() {
+        let directory = TestDirectory::new("ref");
+        fs::create_dir_all(&directory.0).unwrap();
+        // 无记录 → None（旧安装视为未知版本，不误判为最新）。
+        assert_eq!(read_installed_ref(&directory.0), None);
+        // 写入后可读回；空白内容视为无记录。
+        write_installed_ref(&directory.0, "e1ff8c1e4001878cbb80441262d530e16541f138").unwrap();
+        assert_eq!(
+            read_installed_ref(&directory.0).as_deref(),
+            Some("e1ff8c1e4001878cbb80441262d530e16541f138")
+        );
+        fs::write(directory.0.join(PRESET_REF_FILE), "   ").unwrap();
+        assert_eq!(read_installed_ref(&directory.0), None);
+    }
+
+    #[test]
+    fn update_available_requires_installed_and_differs_from_catalog_ref() {
+        // 未安装 → 不可更新（走下载入口）。
+        assert!(!preset_update_available(false, Some("abc"), Some("abc")));
+        assert!(!preset_update_available(false, Some("abc"), None));
+        // 已安装且清单未固定 ref（跟随 main）→ 无法检测差异，不可更新。
+        assert!(!preset_update_available(true, None, Some("abc")));
+        assert!(!preset_update_available(true, None, None));
+        // 已安装且 ref 与安装记录一致 → 最新，不可更新。
+        assert!(!preset_update_available(true, Some("abc"), Some("abc")));
+        // 已安装且 ref 不一致 → 可更新。
+        assert!(preset_update_available(true, Some("abc"), Some("def")));
+        // 已安装但无安装记录（升级前下载的旧安装）→ 无法确认版本，视为可更新。
+        assert!(preset_update_available(true, Some("abc"), None));
+    }
+
+    #[test]
+    fn install_staging_replaces_existing_with_backup_and_rolls_back_on_failure() {
+        let directory = TestDirectory::new("replace");
+        let root = directory.0.join("root");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("pets");
+        let staging = root.join("staging");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("old-config.jsonc"), b"old").unwrap();
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("new-config.jsonc"), b"new").unwrap();
+
+        // 替换：旧目录被换出，新目录就位，备份被清理。
+        let nonce = 100_u128;
+        install_staging(&root, "pets", nonce, &staging, &target, true).unwrap();
+        assert!(target.join("new-config.jsonc").is_file());
+        assert!(!target.join("old-config.jsonc").exists());
+        assert!(!root.join(".preset-backup-pets-100").exists());
+
+        // 替换失败（staging 缺失）→ 回滚备份，旧版本完整保留。
+        let bad_staging = root.join("bad-staging");
+        let err = install_staging(&root, "pets", nonce + 1, &bad_staging, &target, true).unwrap_err();
+        assert!(err.starts_with("PET_PRESET_INSTALL_FAILED:"));
+        assert!(target.join("new-config.jsonc").is_file(), "回滚后保留新版本");
+        assert!(!root.join(".preset-backup-pets-101").exists(), "备份回滚后不残留");
+    }
+
+    #[test]
+    fn install_staging_first_install_and_non_replace_reject() {
+        let directory = TestDirectory::new("fresh");
+        let root = directory.0.join("root");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("fresh-pet");
+        let staging = root.join("staging");
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("config.jsonc"), b"{}").unwrap();
+
+        // 首次安装：target 不存在 → 直接 rename。
+        install_staging(&root, "fresh-pet", 1, &staging, &target, false).unwrap();
+        assert!(target.join("config.jsonc").is_file());
+
+        // 非替换模式下 target 已存在 → 拒绝；staging 保留，由调用方（run_preset_download
+        // 失败路径 remove_dir_all）清理，install_staging 自身不动它。
+        let staging2 = root.join("staging2");
+        fs::create_dir_all(&staging2).unwrap();
+        fs::write(staging2.join("config.jsonc"), b"{}").unwrap();
+        let err = install_staging(&root, "fresh-pet", 2, &staging2, &target, false).unwrap_err();
+        assert!(err.starts_with("PET_PRESET_ALREADY_INSTALLED:"));
+        assert!(target.join("config.jsonc").is_file());
+        assert!(staging2.join("config.jsonc").is_file(), "staging 保留等待调用方清理");
     }
 }

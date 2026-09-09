@@ -2,14 +2,14 @@
  * operation.test.ts — ensureWorktree 的 Git 来源与分支行为。
  */
 
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'pathe'
 import { simpleGit } from 'simple-git'
 import { afterEach, describe, expect, it } from 'vitest'
-import { projectDirname } from './git.js'
-import { computeHash, discardWorktree, ensureWorktree, worktreePath } from './operation.js'
+import { projectDirname } from './git'
+import { computeHash, discardWorktree, ensureWorktree, worktreePath } from './operation'
 
 const temporaryDirectories: string[] = []
 
@@ -220,5 +220,44 @@ describe('ensureWorktree', () => {
     // 删除后不再残留空的 <hash> 容器目录（含 .trash 一侧的 rename 中间目录）。
     expect(existsSync(container)).toBe(false)
     expect(existsSync(trashContainer)).toBe(false)
+  })
+
+  it('links source dependency directories into the worktree and unlinks before discard', async () => {
+    const repository = await createRepository('main')
+    const dependency = join(repository, 'node_modules', 'pkg', 'index.js')
+    await mkdir(join(repository, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(dependency, 'shared-dependency\n')
+    const worktreesRoot = await mkdtemp(join(tmpdir(), 'dsh-worktrees-root-'))
+    temporaryDirectories.push(worktreesRoot)
+
+    const created = await ensureWorktree({}, worktreesRoot, repository, 'linked-session')
+
+    expect(created.ok).toBe(true)
+    if (!created.ok)
+      return
+    expect(created.binding.linkedDependencies).toEqual(['node_modules'])
+    const link = join(created.binding.worktreePath, 'node_modules')
+    expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(readFileSync(join(link, 'pkg', 'index.js'), 'utf8')).toBe('shared-dependency\n')
+
+    await expect(discardWorktree({}, worktreesRoot, { sessionId: 'linked-session' })).resolves.toMatchObject({ ok: true })
+    // 删除工作树只能摘链接，绝不能穿透链接删掉源仓库的 node_modules。
+    expect(readFileSync(dependency, 'utf8')).toBe('shared-dependency\n')
+  })
+
+  it('skips dependency linking when linkDependencies is false', async () => {
+    const repository = await createRepository('main')
+    await mkdir(join(repository, 'node_modules', 'pkg'), { recursive: true })
+    await writeFile(join(repository, 'node_modules', 'pkg', 'index.js'), 'shared-dependency\n')
+    const worktreesRoot = await mkdtemp(join(tmpdir(), 'dsh-worktrees-root-'))
+    temporaryDirectories.push(worktreesRoot)
+
+    const created = await ensureWorktree({}, worktreesRoot, repository, 'unlinked-session', { linkDependencies: false })
+
+    expect(created.ok).toBe(true)
+    if (!created.ok)
+      return
+    expect(created.binding.linkedDependencies).toBeUndefined()
+    expect(existsSync(join(created.binding.worktreePath, 'node_modules'))).toBe(false)
   })
 })

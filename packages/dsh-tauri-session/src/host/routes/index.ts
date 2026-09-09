@@ -8,9 +8,9 @@
  * `$DSH_HOME/sessions/...` 内有界解析该会话的数据目录后交给系统文件管理器。
  */
 
-import type { HostContext } from '../types/index.js'
+import type { HostContext } from '../types'
 import { openDirectory, routeHandler, withConnectionAuth } from 'dsh-tauri'
-import { SESSION_API_PREFIX, SESSION_PLUGIN_NAME } from '../../shared/constants.js'
+import { SESSION_API_PREFIX, SESSION_PLUGIN_NAME } from '../../shared/constants'
 import {
   archiveSession,
   archiveWorkspace,
@@ -19,11 +19,11 @@ import {
   permanentlyDeleteSelected,
   permanentlyDeleteSession,
   unarchiveSession,
-} from '../service/archive.js'
-import { locateSessionDataDir } from '../service/session-files.js'
+} from '../service/archive'
+import { locateSessionDataDir } from '../service/session-files'
 
 /** 构建路由列表。 */
-export function buildRoutes(ctx: HostContext, dshHome: string): any[] {
+export function buildRoutes(ctx: HostContext): any[] {
   const routes = [
     {
       kind: 'exact',
@@ -37,7 +37,7 @@ export function buildRoutes(ctx: HostContext, dshHome: string): any[] {
         const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
         if (!sessionId)
           return [400, { ok: false, error: 'invalid-session-id' }]
-        const directory = locateSessionDataDir(dshHome, sessionId)
+        const directory = locateSessionDataDir(sessionId)
         if (!directory)
           return [400, { ok: false, error: 'session-directory-not-found' }]
         if (!openDirectory(directory))
@@ -63,17 +63,17 @@ export function buildRoutes(ctx: HostContext, dshHome: string): any[] {
     {
       kind: 'exact',
       path: `${SESSION_API_PREFIX}/delete`,
-      handler: routeHandler(async body => [200, await permanentlyDeleteSession(ctx, dshHome, body)], { mutate: true }),
+      handler: routeHandler(async body => [200, await permanentlyDeleteSession(ctx, body)], { mutate: true }),
     },
     {
       kind: 'exact',
       path: `${SESSION_API_PREFIX}/delete-workspace`,
-      handler: routeHandler(async body => [200, await permanentlyDeleteSelected(ctx, dshHome, body)], { mutate: true }),
+      handler: routeHandler(async body => [200, await permanentlyDeleteSelected(ctx, body)], { mutate: true }),
     },
     {
       kind: 'exact',
       path: `${SESSION_API_PREFIX}/clear`,
-      handler: routeHandler(async () => [200, await permanentlyDeleteAll(ctx, dshHome)], { mutate: true }),
+      handler: routeHandler(async () => [200, await permanentlyDeleteAll(ctx)], { mutate: true }),
     },
   ]
   return routes.map(route => ({

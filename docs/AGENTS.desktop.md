@@ -236,6 +236,7 @@ export function FooComponent(props: FooProps) {
 - `dsh` CLI is a Node script (`dependencies/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js`); CLI integration is **shim + PATH**. pnpm is also JS (`dependencies/pnpm/bin/pnpm.cjs`, npm tarball).
 - AppData layout（核心共用）：`runtime/node.exe`、`dependencies/dsh/`、`dependencies/pnpm/`、`.store.dat` / `.store.dev.dat`（后者为 debug）；服务日志 `logs/dsh-web.log`（debug 为 `logs/dsh-web.dev.log`）；`$DSH_HOME` 在用户主目录（release `~/.dsh`，debug `~/.dsh.dev`）。
 - Service args: `node bin.js --profile web --host 127.0.0.1 --port <setting.port>`; `cli::ensure` runs after install.
+- 原生模块 ABI（issue #441）：预打包核心的原生模块（`fs-ext` 等 node-gyp 包）在 pkg 构建期编译，ABI 只与构建期 Node 大版本一致，而本地 Node 只按 semver 挑选。`service/core/runtime.rs::prepare_active_runtime` 在 spawn 前用 `NATIVE_PROBE_SCRIPT` 探测（require 核心里的原生包，`NODE_MODULE_VERSION` 不匹配即 ABI 失败）：先补 sharp/koffi 平台包，再改用与核心对齐的捆绑运行时（`config::set_prefer_bundled_node_runtime`，`get_node_binary_path`/`get_active_node_version`/`Nodejs::check_installed` 均受其影响，`launch.rs` 会在 prepare 后重新解析 node 路径），再 `npm rebuild`（用所选运行时自带的 npm），最后返回 `CORE_NATIVE_ABI_MISMATCH:` 诊断。CLI shim 的 node 选择仍是 semver-only。
 
 ## Summary
 

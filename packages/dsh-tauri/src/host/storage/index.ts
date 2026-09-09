@@ -1,48 +1,35 @@
 /**
- * host/storage.ts — unstorage fs 适配器 + 原子写恢复（插件 JSON 状态的统一持久化）。
+ * host/storage.ts — workspace 统一的宿主文件存储（unstorage fs driver + 原子写）。
  *
- * 为什么在这里：worktree 的 ledger / checkout-context、session 的旧版归档、panel-extension
- * 的 state.json 都需要「小 JSON 文件 + 原子写」的同一形态；按 unconfig 的抽离标准
- * （≥2 个真实消费者、API 稳定、可独立测试）抽到 dsh-tauri 宿主共享。
- *
- * 为什么包原子写：unstorage 的 fs driver `setItem` 是直接 writeFile，读者可能读到
- * 半份 JSON；本项目既有保证是 tmp+rename（临时文件写全后原子改名）。这里以自定义
- * driver 组合 fs driver：读/枚举/watch 语义不变，写路径恢复原子保证。
- *
- * 为什么对 rename 做带退避的重试：Windows 下「tmp 写全后 rename 覆盖目标文件」的原子
- * 写法并不稳定——Node 的 rename 底层用 MoveFileEx(MOVEFILE_REPLACE_EXISTING)，当目标
- * 文件正被另一个句柄打开（未共享删除访问，典型如同步读面 loadLedgerSync 尚未关闭，
- * 或上一次写仍在收尾）时会以 EPERM 失败；句柄释放后重试即成功，正好匹配「工作树
- * 偶尔失败、点多几次就好」的现象。这里用有界退避重试覆盖这种瞬时锁竞争，同时保留
- * tmp+rename 的原子语义（读者永远看不到半份 JSON）。非 Windows 平台 rename 覆盖是
- * 原子的，补偿很小，故不按平台分支。
+ * 唯一入口 `createAtomicFsStorage(featureDir)`：`featureDir` 是 DSH_HOME（默认 `~/.dsh`）
+ * 下的功能目录名（如 `"crons"`），内部拼接 `$DSH_HOME/<featureDir>`；绝对路径原样使用。
  */
 
 import type { Storage } from 'unstorage'
 import { randomUUID } from 'node:crypto'
 import { mkdir, rename, unlink, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { dirname, isAbsolute, join } from 'node:path'
 import process from 'node:process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { createStorage } from 'unstorage'
 import fsDriver from 'unstorage/drivers/fs'
 
-/** fs driver 的可写子面（setItem 替换点）。 */
-type FsDriverShape = ReturnType<typeof fsDriver>
-
-/** tmp+rename 落盘时对瞬时锁竞争（EPERM）的最大重试次数。 */
+/** tmp+rename 落盘时对瞬时锁竞争（EPERM）的最大重试次数与退避延迟（ms）。 */
 const RENAME_MAX_RETRIES = 8
-/** 每次重试前的退避延迟（毫秒）。 */
 const RENAME_RETRY_DELAY_MS = 25
+
+/** 宿主数据根目录（优先使用 $DSH_HOME，默认 ~/.dsh）。 */
+const DSH_HOME = process.env.DSH_HOME ?? join(homedir(), '.dsh')
 
 /**
  * 以 tmp+rename 原子写覆盖 target；Windows 下目标被瞬时占用时按有界退避重试。
- *
- * 独立导出以便单测锁定重试/原子性契约（包公开面仍只有 createAtomicFsStorage）。
+ * 独立导出以便单测锁定重试/原子性契约。
  */
 export async function writeAtomic(target: string, value: string): Promise<void> {
   await mkdir(dirname(target), { recursive: true })
   const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`
+
   try {
     await writeFile(temporary, value, 'utf8')
     for (let attempt = 0; ; attempt++) {
@@ -51,51 +38,33 @@ export async function writeAtomic(target: string, value: string): Promise<void> 
         return
       }
       catch (error) {
-        // 非锁语义的硬失败（权限/不存在/来源消失等）直接抛出，不吞掉。
-        if (attempt >= RENAME_MAX_RETRIES || !isRenameLockError(error))
+        // 非锁语义的硬失败（非 EPERM/权限/不存在等）或超过重试次数时抛出
+        if (attempt >= RENAME_MAX_RETRIES || (error as NodeJS.ErrnoException)?.code !== 'EPERM') {
           throw error
+        }
         await sleep(RENAME_RETRY_DELAY_MS)
       }
     }
   }
   catch (error) {
-    // 覆盖失败时清理残留临时文件；unlink 失败可忽略（可能已被删/权限变化）。
     await unlink(temporary).catch(() => {})
     throw error
   }
 }
 
-/** 是否为「目标被占用」一类的瞬时 rename 失败（平台相关的 EPERM）。 */
-function isRenameLockError(error: unknown): boolean {
-  if (error && typeof error === 'object' && 'code' in error) {
-    const code = (error as NodeJS.ErrnoException).code
-    return code === 'EPERM'
-  }
-  return false
-}
-
 /**
- * unstorage key 相对路径解析：unstorage 以 `:` 作为 key 层级分隔符（fs driver 的
- * `r(key) = join(base, key.replace(/:/g, '/'))`），若自定义 setItem 不还原会把 `:` 原样
- * 拼进路径，Windows 上 `:` 是非法字符导致 EINVAL/ENOENT。这里与 fs driver 保持同一
- * 还原，使 `ledger:session-a.json` 落到 `base/ledger/session-a.json`。
+ * 创建「原子写 + unstorage」的文件存储：key 即 base 下的相对路径。
+ * @param featureDir DSH_HOME 下的功能目录名；绝对路径原样使用。
  */
-function resolveKeyPath(base: string, key: string): string {
-  return join(base, key.replace(/:/g, '/'))
-}
+export function createAtomicFsStorage(featureDir: string): Storage {
+  const base = isAbsolute(featureDir) ? featureDir : join(DSH_HOME, featureDir)
 
-/**
- * 创建「原子写 + unstorage」的文件存储：key 即 base 下的相对路径（`:` 为子目录分隔符）。
- * 调用方写入时传对象或预序列化字符串均可；getItem 自动 JSON.parse。
- * @param base 存储根目录（不存在时按需创建）。
- * @returns unstorage Storage（键为相对路径，可用 `:` 表达子目录）。
- */
-export function createAtomicFsStorage(base: string): Storage {
-  const driver: FsDriverShape = {
-    ...fsDriver({ base }),
-    async setItem(key: string, value: string) {
-      await writeAtomic(resolveKeyPath(base, key), value)
+  return createStorage({
+    driver: {
+      ...fsDriver({ base }),
+      async setItem(key: string, value: string) {
+        await writeAtomic(join(base, key.replace(/:/g, '/')), value)
+      },
     },
-  }
-  return createStorage({ driver })
+  })
 }

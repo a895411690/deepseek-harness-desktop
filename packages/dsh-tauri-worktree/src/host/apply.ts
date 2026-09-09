@@ -9,22 +9,23 @@
  *   4. HTTP 路由注册在 effect 内，卸载统一释放。
  */
 
-import type { HostContext, PendingHandoff, PluginConfig } from './types/index.js'
+import type { HostContext, PendingHandoff, PluginConfig } from './types'
 import { homedir } from 'node:os'
 import { join } from 'pathe'
-import { WORKTREE_SECTION_ORDER } from '../shared/constants.js'
-import { createWorktreeHooks } from './hooks/index.js'
-import { buildRoutes } from './routes/index.js'
-import { completeWorktreeHandoff } from './service/handoff.js'
-import { unregisterWorktreeWorkspace, worktreeKey } from './service/operation.js'
+import { WORKTREE_SECTION_ORDER } from '../shared/constants'
+import { createWorktreeHooks } from './hooks'
+import { buildRoutes } from './routes'
+import { completeWorktreeHandoff } from './service/handoff'
+import { materializeLinkedDependencies } from './service/install-hook'
+import { unregisterWorktreeWorkspace, worktreeKey } from './service/operation'
 import {
   clearPendingCheckoutContext,
   listBindingsSync,
   loadBindingSync,
   loadCheckoutContextSync,
   migrateLegacyLedger,
-} from './storage/index.js'
-import { createToolSet } from './tools/index.js'
+} from './storage'
+import { createToolSet } from './tools'
 
 /**
  * 插件体：注册工具、HTTP 路由与系统提示注入。
@@ -62,6 +63,20 @@ export function apply(ctx: HostContext, config: PluginConfig = {}): void {
     if (event.type !== 'turn/end')
       return
     void hooks.callHook('session:turn-end', session, event)
+  })
+
+  // 1.5) 安装依赖前断开工作树内的共享链接：链接让工作树开箱可用，但包管理器直接写入会
+  //      穿透链接污染源仓库（pnpm 还会把源仓库的 workspace 链接改写成指向工作树）。
+  //      在工具真正执行前（tools/execute，位于策略与审批之后）断开，安装即在
+  //      工作树内物化成独立依赖目录。钩子失败只记录日志，绝不阻断工具调用。
+  ctx.on('tools/execute', async (exec: any, next: any) => {
+    try {
+      await materializeLinkedDependencies(ctx, worktreesRoot, cfg.linkDependencyDirectories, exec)
+    }
+    catch (error) {
+      ctx.logger?.warn?.(`dsh-tauri-worktree: dependency link materialization failed: ${String(error)}`)
+    }
+    return next()
   })
 
   // 2) 旧版本遗留自愈：拆除整表 ledger.json（一次性迁移到按会话文件），并只注销
@@ -117,8 +132,9 @@ export function apply(ctx: HostContext, config: PluginConfig = {}): void {
         + `Worktree path: ${binding.worktreePath}\n`
         + `Project path: ${binding.projectPath}\n\n`
         + `Make code changes inside the bound worktree and use its path as the shell workdir. `
-        + `The worktree contains only tracked files: node_modules and generated build dirs are not carried over, `
-        + `so if the project needs its dependencies, run the package manager install (e.g. \`pnpm install\`) inside the worktree first. `
+        + `Dependency directories (e.g. node_modules) are linked from the source repository so the worktree works out of the box. `
+        + `Running a package manager install (e.g. \`pnpm install\`) inside the worktree first detaches that link and materializes an independent copy, `
+        + `leaving the source repository untouched. `
         + `checkout_worktree is user-authorized only: call it only after a direct human user explicitly requests or approves checkout. `
         + `Task completion, a merged PR, or inferred convenience is not permission to call it. When checkout would be a natural next step, `
         + `such as after a PR is merged, you may ask the user whether they want to check out the worktree; wait for their approval before calling.`

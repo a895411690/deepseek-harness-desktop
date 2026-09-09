@@ -1,3 +1,4 @@
+import type { SkillRootEntry } from '../service/skill-root'
 /**
  * Custom skill repositories the user registers from the Settings page:
  * a local directory (scanned in place, zero-copy) or a GitHub repo (tarball
@@ -8,14 +9,13 @@
  * provider.
  */
 
-import type { SkillRootEntry } from '../storage/index.ts'
 import { Buffer } from 'node:buffer'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, symlinkSync } from 'node:fs'
 import process from 'node:process'
 import { $fetch } from 'ofetch'
 import { basename, join, resolve } from 'pathe'
-import { addSkillRoot, findRootByUrl, materialDirFor, newEntryId } from '../storage/index.ts'
 import { removeTree } from './rmtree.ts'
+import { createSkillRoot, findSkillRootByUrl, materialDirFor, newEntryId } from './skill-root'
 import { extractTarGz } from './tar.ts'
 
 /** One GitHub source, parsed from whatever URL shape the user pasted. */
@@ -154,7 +154,7 @@ export function detectSkillRoots(checkout: string): DetectedRoots {
 }
 
 /** Register a local directory as a skill repository. */
-export async function addLocalRepo(path: string, dshHome?: string): Promise<SkillRootEntry> {
+export async function addLocalRepo(path: string): Promise<SkillRootEntry> {
   const resolved = resolve(path.trim().replace(/^"|"$/g, ''))
   if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
     throw new Error(`not a directory: ${resolved}`)
@@ -167,7 +167,7 @@ export async function addLocalRepo(path: string, dshHome?: string): Promise<Skil
     // One skill living at the given path: the provider scans a ROOT, so wrap
     // the path in a dedicated directory holding a single link to it.
     const id = newEntryId('local')
-    const material = materialDirFor(id, dshHome)
+    const material = materialDirFor(id)
     removeTree(material)
     mkdirSync(material, { recursive: true })
     try {
@@ -177,9 +177,9 @@ export async function addLocalRepo(path: string, dshHome?: string): Promise<Skil
       removeTree(material)
       throw new Error('single-skill local folders need a directory link; try adding their parent folder instead')
     }
-    return addSkillRoot({ id, kind: 'local', label: basename(resolved), path: resolved, roots: [material], materialDir: material }, dshHome)
+    return createSkillRoot({ id, kind: 'local', label: basename(resolved), path: resolved, roots: [material], materialDir: material })
   }
-  return addSkillRoot({ id: newEntryId('local'), kind: 'local', label: basename(resolved), path: resolved, roots: detected.roots }, dshHome)
+  return createSkillRoot({ id: newEntryId('local'), kind: 'local', label: basename(resolved), path: resolved, roots: detected.roots })
 }
 
 /** Download cap for a repo tarball. */
@@ -210,12 +210,12 @@ async function downloadTarball(url: string, fetcher?: typeof fetch): Promise<Arr
 /** Register a GitHub repo: tarball download → extract → detect → persist. */
 export async function addGitRepo(
   url: string,
-  options: { dshHome?: string, fetcher?: typeof fetch } = {},
+  options: { fetcher?: typeof fetch } = {},
 ): Promise<SkillRootEntry> {
   const source = parseGitHubSource(url)
   if (source === null)
     throw new Error('expected a GitHub repository URL or owner/repo')
-  const existing = findRootByUrl(source.githubUrl, options.dshHome) ?? findRootByUrl(source.label, options.dshHome)
+  const existing = await findSkillRootByUrl(source.githubUrl) ?? await findSkillRootByUrl(source.label)
   if (existing !== undefined)
     throw new Error(`${source.label} is already registered`)
 
@@ -224,7 +224,7 @@ export async function addGitRepo(
     throw new Error('repository tarball too large')
 
   const id = newEntryId('git')
-  const material = materialDirFor(id, options.dshHome)
+  const material = materialDirFor(id)
   removeTree(material)
   const checkout = join(material, 'repo')
   try {
@@ -237,9 +237,8 @@ export async function addGitRepo(
     // A single-skill repo is discovered through the material dir itself; a
     // collection registers the checkout (plus nested collection wrappers).
     const roots = detected.single ? [material] : detected.roots
-    return addSkillRoot(
+    return createSkillRoot(
       { id, kind: 'git', label: source.label, url: source.githubUrl, ref: source.ref, roots, materialDir: material },
-      options.dshHome,
     )
   }
   catch (error) {

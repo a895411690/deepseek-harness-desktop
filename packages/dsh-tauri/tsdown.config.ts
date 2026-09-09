@@ -1,4 +1,4 @@
-import { defineDshConfig } from 'dsh-tauri-tsdown'
+import { defineDshConfig } from '../dsh-tauri-tsdown/src/index.ts'
 
 export default defineDshConfig({
   // Client bundle inlines CJS deps (css-render/murmurhash) whose

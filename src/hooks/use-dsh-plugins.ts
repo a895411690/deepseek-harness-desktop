@@ -30,6 +30,8 @@ export interface DshPlugin {
   bundled: boolean
   /** 是否在禁用清单（disabled-plugins.json）中，独立于 bundled */
   disabled: boolean
+  /** 是否在 cordis.patch.yml 中被配置覆盖禁用（disabled: true），优先级高于禁用清单 */
+  patchDisabled: boolean
   /** 预设清单中的「推荐」标记 */
   recommended: boolean
   /** 预设清单中的「修复」标记 */
@@ -54,8 +56,8 @@ export interface UseDshPluginsResult {
   refresh: () => Promise<void>
   /** 禁用指定插件（从 dsh.profile.bundles 移除，保留包体） */
   disablePlugin: (id: string) => Promise<void>
-  /** 启用指定插件（加回 dsh.profile.bundles） */
-  enablePlugin: (id: string) => Promise<void>
+  /** 启用指定插件（加回 dsh.profile.bundles）；clearConfigOverride 为 true 时同时移除 cordis.patch.yml 中的禁用覆盖 */
+  enablePlugin: (id: string, clearConfigOverride?: boolean) => Promise<void>
 }
 
 /**
@@ -122,8 +124,8 @@ export function useDshPlugins(): UseDshPluginsResult {
   function disablePlugin(id: string) {
     return invoke<void>('disable_dsh_plugin', { id })
   }
-  function enablePlugin(id: string) {
-    return invoke<void>('enable_dsh_plugin', { id })
+  function enablePlugin(id: string, clearConfigOverride = false) {
+    return invoke<void>('enable_dsh_plugin', { id, clearConfigOverride })
   }
 
   async function refresh() {

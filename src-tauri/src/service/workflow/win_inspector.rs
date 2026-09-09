@@ -1,20 +1,13 @@
-//! Windows 极简模式（Minimal）修复：win32 terminal inspector 挂载 + 用户 preset。
+//! Windows 极简模式（Minimal）兼容：优先使用 DSH 官方 win32 inspector。
 //!
 //! 极简模式在 Windows 上有两层故障，本模块处理后一层（挂载与 preset 落盘），
 //! 前一层（插件安装）走预装插件流程（`service/plugin`）：
 //!
-//! 1. **终端检查缺失**：`@deepseek-ai/dsh-subprocess-local` 的
-//!    `createProcessInspector()` 只在 linux/darwin 实现，win32 上 persistent
-//!    shell spawn 时在 PTY 之前直接 throw
-//!    `subprocess-local: terminal inspection is unsupported on platform win32`
-//!    （上游未修，见 issue #12）。
-//!    修复：社区插件 [clearkurt/dsh-win-terminal-inspector]（MIT）包装运行时
-//!    实例的 `spawnTerminal`，利用公开测试钩子 `terminalInspector` 注入
-//!    `WindowsProcessInspector`，不修改任何 node_modules 官方包。该插件由预装
-//!    向导通过 `dsh plugin add github:clearkurt/dsh-win-terminal-inspector`
-//!    装入 profile 的 node_modules（Git 依赖，主键即包名），**桌面端仓库不内置
-//!    任何插件源码**；本模块随后写入 profile 的 `cordis.patch.yml` 显式入口
-//!    挂载行，并创作 Windows 用户 preset。
+//! 1. **终端检查缺失**：旧版 `@deepseek-ai/dsh-subprocess-local` 在 win32 上
+//!    会抛出 `subprocess-local: terminal inspection is unsupported on platform win32`。
+//!    DSH 0.1.0-rc.8 起已在官方运行时内置 Windows process inspector，因此新版本
+//!    不再安装或挂载社区注入插件；仅 rc.6/rc.7 保留兼容分支。旧分支只写入
+//!    `cordis.patch.yml`，不再修改第三方 `node_modules` 源码。
 //!
 //! 2. **preset 自身在 Windows 不可用**：agent preset 的组成（`agent.cordis.yml`）
 //!    由每次会话直接从磁盘文件挂载（`dsh-agent-presets::mountPreset`），
@@ -57,15 +50,6 @@ mod imp {
 
     /// 注入判定标记：patch 中出现该字符串即视为已挂载。
     const PATCH_MARKER: &str = "dsh-win-terminal-inspector";
-
-    /// 社区插件异步 PID 兼容补丁的幂等标记。
-    const ASYNC_PID_PATCH_MARKER: &str = "dsh-desktop: synchronize asynchronous node-pty pid";
-
-    /// 插件中创建 spawn 串行队列的稳定锚点。
-    const SPAWN_CHAIN_ANCHOR: &str = "  let chain = Promise.resolve();";
-
-    /// 插件中 inspector 挂载的稳定锚点。
-    const INSPECTOR_ATTACH_ANCHOR: &str = "        if (handle !== undefined && handle.terminal !== undefined) inspector.attach(handle.terminal);";
 
     /// 用户 preset 目录名（`$DSH_HOME/.agent-presets/<id>/`）。
     const WIN_PRESET_ID: &str = "minimal-win";
@@ -112,100 +96,6 @@ mod imp {
             .and_then(serde_json::Value::as_object)
             .map(|deps| deps.contains_key(PLUGIN_DEP_NAME))
             .unwrap_or(false)
-    }
-
-    /// node-pty 1.2 的 ConPTY client pid 异步就绪时，同步插件包装器拿到的 handle 身份。
-    ///
-    /// `LocalTerminalHandle` 在构造时快照 `terminal.pid` 与 `rootIdentity`；Windows 下
-    /// node-pty 1.2.0-beta.15 此刻固定返回 0，随后才在 `ready_datapipe` 更新真实 pid。
-    /// 社区插件已持有 terminal、handle 与 inspector，故在挂载后短时轮询并回填是
-    /// 不修改官方包源码的最小修复。返回值用于安全处理上游插件布局变化。
-    #[derive(Debug, PartialEq, Eq)]
-    enum AsyncPidPatchOutcome {
-        AlreadyPatched,
-        AnchorMissing,
-        Patched(String),
-    }
-
-    fn patch_async_pid_source(source: &str) -> AsyncPidPatchOutcome {
-        if source.contains(ASYNC_PID_PATCH_MARKER) {
-            return AsyncPidPatchOutcome::AlreadyPatched;
-        }
-        if !source.contains(SPAWN_CHAIN_ANCHOR) || !source.contains(INSPECTOR_ATTACH_ANCHOR) {
-            return AsyncPidPatchOutcome::AnchorMissing;
-        }
-
-        let helper = format!(
-            r#"  // {ASYNC_PID_PATCH_MARKER}
-  // node-pty >= 1.2 在 spawn 返回后才解析 ConPTY client pid，
-  // LocalTerminalHandle 则已在构造函数中快照 pid/rootIdentity。
-  const syncShellIdentity = (handle, inspector, terminal) => {{
-    let tries = 0;
-    const tick = () => {{
-      if (handle.exited) return;
-      const pid = typeof terminal?.pid === "number" ? terminal.pid : 0;
-      if (pid > 0) {{
-        handle.pid = pid;
-        try {{
-          const rootIdentity =
-            inspector.processTree(pid).find((member) => member.pid === pid);
-          if (rootIdentity !== undefined) {{
-            handle.rootIdentity = rootIdentity;
-            return;
-          }}
-        }} catch (_tableUnavailable) {{}}
-      }}
-      if (++tries < 60) setTimeout(tick, 100);
-    }};
-    tick();
-  }};
-
-"#
-        );
-        let patched = source.replacen(
-            SPAWN_CHAIN_ANCHOR,
-            &format!("{helper}{SPAWN_CHAIN_ANCHOR}"),
-            1,
-        );
-        let attach = format!(
-            "        if (handle !== undefined && handle.terminal !== undefined) {{\n          inspector.attach(handle.terminal);\n          syncShellIdentity(handle, inspector, handle.terminal);\n        }}"
-        );
-        AsyncPidPatchOutcome::Patched(patched.replacen(INSPECTOR_ATTACH_ANCHOR, &attach, 1))
-    }
-
-    /// 对 profile 中已安装的社区插件应用异步 PID 兼容补丁（幂等）。
-    fn ensure_async_pid_patch(profile: &Path) -> Result<(), String> {
-        let entry = profile.join("node_modules/dsh-win-terminal-inspector/index.js");
-        if !entry.exists() {
-            log::warn!(
-                "win terminal inspector entry missing, skip async pid patch: {}",
-                entry.display()
-            );
-            return Ok(());
-        }
-        let source = fs::read_to_string(&entry)
-            .map_err(|e| format!("WIN_INSPECTOR_PATCH_READ: {} failed: {e}", entry.display()))?;
-        match patch_async_pid_source(&source) {
-            AsyncPidPatchOutcome::AlreadyPatched => {
-                log::info!("win terminal inspector async pid patch already applied");
-            }
-            AsyncPidPatchOutcome::AnchorMissing => {
-                log::warn!(
-                    "win terminal inspector async pid patch anchors missing, skip: {}",
-                    entry.display()
-                );
-            }
-            AsyncPidPatchOutcome::Patched(patched) => {
-                fs::write(&entry, patched).map_err(|e| {
-                    format!("WIN_INSPECTOR_PATCH_WRITE: {} failed: {e}", entry.display())
-                })?;
-                log::info!(
-                    "win terminal inspector async pid compatibility patched: {}",
-                    entry.display()
-                );
-            }
-        }
-        Ok(())
     }
 
     /// 幂等地写入 web profile 的 `cordis.patch.yml` 挂载行。
@@ -504,29 +394,36 @@ mod imp {
         Ok(())
     }
 
-    /// 应用 Windows 极简模式修复的落盘部分：挂载 patch 行 + 创作用户 preset。
-    ///
-    /// 仅在插件已装入 profile 时写 patch（避免挂载不存在的包）；插件未装入时
-    /// 清理可能残留的挂载行（`dsh plugin remove` 后避免 loader 报错）；preset
-    /// 仅在 Git Bash 存在时创作。均为幂等，失败只返回错误、由调用方决定是否告警。
+    /// DSH 0.1.0-rc.8 起已内置 Windows process inspector。
+    fn official_inspector_available(version: &str) -> bool {
+        let Some((base, prerelease)) = version.split_once("-rc.") else {
+            return semver::Version::parse(version).is_ok();
+        };
+        let Some(rc) = prerelease.split('.').next().and_then(|n| n.parse::<u64>().ok()) else {
+            return false;
+        };
+        base != "0.1.0" || rc >= 8
+    }
+
+    /// 应用 Windows 极简模式兼容。新核心完全使用官方实现；旧 rc.6/rc.7
+    /// 才挂载社区兼容插件。绝不修改第三方 node_modules，避免升级后源码锚点失效。
     pub fn apply(app_handle: &tauri::AppHandle) -> Result<(), String> {
         let profile = profile_dir(app_handle);
-        // 无论插件是否装入，先确保 patch 文件是 dsh 可加载的顶层数组：
-        // dsh 初始化留下的“仅注释”scaffold 会让加载器启动崩溃。
-        ensure_patch_scaffold(&profile)?;
-        if !is_plugin_installed(&profile) {
-            // 插件已卸载（如 `dsh plugin remove`）：清掉之前写入的挂载行，
-            // 避免 loader 去挂载一个不存在的包导致 harness 启动/热加载报错。
-            // 其余用户条目与注释原样保留；无该行时无操作。
+        let version = crate::service::core::active_version(app_handle);
+        if version.as_deref().is_some_and(official_inspector_available) {
+            // 新核心不需要社区注入；同时清理旧版本遗留的 patch，避免重复挂载。
             prune_patch_if_uninstalled(&profile)?;
-            log::debug!("win terminal inspector not installed in profile, patch pruned if present");
+            log::info!("DSH {:?} provides the official Windows process inspector", version);
             return Ok(());
         }
-
+        ensure_patch_scaffold(&profile)?;
+        if !is_plugin_installed(&profile) {
+            prune_patch_if_uninstalled(&profile)?;
+            return Ok(());
+        }
         ensure_patch(&profile)?;
-        ensure_async_pid_patch(&profile)?;
         ensure_win_minimal_preset(app_handle)?;
-        log::info!("win32 terminal support applied to {:?}", profile.display());
+        log::info!("legacy win32 terminal compatibility applied to {:?}", profile.display());
         Ok(())
     }
 
@@ -538,79 +435,13 @@ mod imp {
             std::env::temp_dir().join(format!("win-inspector-test-{}-{tag}", std::process::id()))
         }
 
-        fn plugin_source_fixture() -> String {
-            format!(
-                r#"export function apply(ctx) {{
-  let chain = Promise.resolve();
-  const wrapped = (spec) => {{
-    const run = chain.then(async () => {{
-      const inspector = new WindowsProcessInspector();
-      try {{
-        const handle = await original.call(runtime, spec);
-        if (handle !== undefined && handle.terminal !== undefined) inspector.attach(handle.terminal);
-        return handle;
-      }} finally {{}}
-    }});
-    return run;
-  }};
-}}
-"#
-            )
-        }
-
         #[test]
-        fn async_pid_patch_syncs_handle_after_terminal_pid_is_ready() {
-            let AsyncPidPatchOutcome::Patched(patched) =
-                patch_async_pid_source(&plugin_source_fixture())
-            else {
-                panic!("expected patched plugin source");
-            };
-            assert!(patched.contains(ASYNC_PID_PATCH_MARKER));
-            assert!(patched.contains("if (++tries < 60) setTimeout(tick, 100);"));
-            assert!(patched.contains("handle.pid = pid;"));
-            assert!(patched.contains("handle.rootIdentity ="));
-            assert!(patched.contains("syncShellIdentity(handle, inspector, handle.terminal);"));
-            assert!(patched.contains("inspector.attach(handle.terminal);"));
-        }
-
-        #[test]
-        fn async_pid_patch_is_idempotent() {
-            let AsyncPidPatchOutcome::Patched(patched) =
-                patch_async_pid_source(&plugin_source_fixture())
-            else {
-                panic!("expected patched plugin source");
-            };
-            assert_eq!(
-                patch_async_pid_source(&patched),
-                AsyncPidPatchOutcome::AlreadyPatched
-            );
-        }
-
-        #[test]
-        fn async_pid_patch_skips_changed_upstream_layout() {
-            assert_eq!(
-                patch_async_pid_source("export function apply() {}"),
-                AsyncPidPatchOutcome::AnchorMissing
-            );
-        }
-
-        #[test]
-        fn async_pid_patch_updates_installed_plugin_file() {
-            let dir = temp_dir("async-pid");
-            let plugin_dir = dir.join("node_modules/dsh-win-terminal-inspector");
-            std::fs::create_dir_all(&plugin_dir).unwrap();
-            let entry = plugin_dir.join("index.js");
-            std::fs::write(&entry, plugin_source_fixture()).unwrap();
-
-            ensure_async_pid_patch(&dir).unwrap();
-            let once = std::fs::read_to_string(&entry).unwrap();
-            assert!(once.contains(ASYNC_PID_PATCH_MARKER));
-
-            ensure_async_pid_patch(&dir).unwrap();
-            let twice = std::fs::read_to_string(&entry).unwrap();
-            assert_eq!(once, twice);
-
-            std::fs::remove_dir_all(&dir).ok();
+        fn official_inspector_version_boundary() {
+            assert!(!official_inspector_available("0.1.0-rc.7"));
+            assert!(official_inspector_available("0.1.0-rc.8"));
+            assert!(official_inspector_available("0.1.0-rc.10"));
+            assert!(official_inspector_available("0.2.0"));
+            assert!(!official_inspector_available("not-a-version"));
         }
 
         #[test]

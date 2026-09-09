@@ -4,7 +4,7 @@
  * 注册进 conversation.input.dock；inject 句柄随 effect 生命周期释放。
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientContext } from 'dsh-tauri/client'
 import type { ModeSelectProps, SessionsRuntime, WorkspacesRuntime } from '../types'
 import { compat } from 'dsh-tauri/client'
 import { WorktreeModeSelect } from '../components/mode-select'
@@ -15,7 +15,7 @@ import { NS } from '../locales'
 type ModeSelectInjected = Omit<ModeSelectProps, 'useInput' | 'inputActions'>
 
 /** 使用 input.dock 的 session 生命周期，并把控件 portal 到标准模式右侧。 */
-export function registerModeSelect(ctx: Context): () => void {
+export function registerModeSelect(ctx: ClientContext): () => void {
   const cx = compat(ctx as import('dsh-tauri/client').ClientContext)
   return ctx.slots.inject(INPUT_DOCK_SLOT as never, () =>
     ctx.slots.register(

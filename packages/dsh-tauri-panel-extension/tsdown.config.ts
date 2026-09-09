@@ -1,4 +1,4 @@
-import { defineDshConfig } from 'dsh-tauri-tsdown'
+import { defineDshConfig } from '../dsh-tauri-tsdown/src/index.ts'
 
 // Client-only libraries must be bundled into the classic loader artifact. The
 // DSH client module table only materializes platform seed words and declared

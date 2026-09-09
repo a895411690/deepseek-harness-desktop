@@ -120,3 +120,31 @@ return ctx.slots.register(
   手柄不渲染、宽度固定（`--dsh-chat-content-width` 回退 `780px`），仅 console.warn 一次；
 - **renderer 补丁缺失**：`<SlotOutlet>` 为 `undefined` → 侧栏面板整体不注册
   （官方侧栏原样工作），但 `panel.protocol`（内容区替换）仍可用。
+
+## 5. 纯 Web 插件的 DOM 兼容锚点（`PANEL_SIDEBAR_COMPAT_CLASS`）
+
+桌面端以 `priority: -1` 整槽替换官方 `ui-sidebar`，官方 `SidebarRoot`（含
+`logoRow` / `newSession` 等 CSS module camelCase class）不再渲染。纯 Web 生态插件
+（dsh-web 的 `dsh-task-board` / `dsh-ssh` 等）**不接入**本协议的
+`sidebar.panel.action` 槽，而是按官方 class 的 camelCase 子串做纯 DOM 注入：
+
+- `[class*="sidebarCol"]`（官方 layout 列；桌面仍在）定位侧栏列；
+- 列内 `[class*="logoRow"]` 元素的 `parentElement` 作为注入 root；
+- root 内 `button[class*="newSession"]` 作为「新会话块」定位；
+- 入口行插入该块与 workspace 浏览器之间（`closest('[class*="logoRow"]')`
+  命中块 → 块是 root 直接子级 → 插到块之后）。
+
+克隆侧栏 class 为 kebab 命名（`dshp-panel__logo-row` 等），与 camelCase 子串
+不匹配 → 这类插件的入口行永不挂载（静默，仅 console.error）。为此克隆 DOM 在
+**语义等价**元素上携带带官方 camelCase 子串的 token class（无任何样式）：
+
+| token | 值 | 位置（语义） |
+| --- | --- | --- |
+| `PANEL_SIDEBAR_COMPAT_CLASS.logoRow` | `dshp-panel-compat-logoRow` | 面板区容器 `dshp-panel__panel-area`（充当「新会话所在块」） |
+| `PANEL_SIDEBAR_COMPAT_CLASS.newSession` | `dshp-panel-compat-newSession` | 面板区内新会话菜单项（`dshp-panel__new-session`） |
+
+效果：注入行落入 panel-area（新会话 + 第三方条目）与 region-area（workspace
+浏览器）之间，与官方侧栏语义等价；`sidebar.panel.action` 协议仍是推荐接入方式，
+DOM 锚点仅为无法改造的纯 Web 插件提供回退。未来若克隆侧栏结构调整，须保持
+panel-area 为 root 直接子级且 newSession token 位于 logoRow token 容器内
+（`closest` 链依赖此几何）。

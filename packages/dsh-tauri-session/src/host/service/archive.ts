@@ -10,16 +10,14 @@
  *   也不允许并发删除在记账与归档集合之间交错。
  */
 
-import type { ArchivedListPayload, ArchiveDocument, HostContext } from '../types/index.js'
+import type { ArchivedListPayload, ArchiveDocument, HostContext } from '../types'
 import type {
   RegistryArchiveSurface,
-} from './registry.js'
-import { rmSync } from 'node:fs'
-import { join } from 'pathe'
-import { SESSION_PLUGIN_NAME } from '../../shared/constants.js'
-import { SESSION_ARCHIVE_FILE } from '../constants/index.js'
-import { archiveHooks } from '../hooks/index.js'
-import { loadArchive, saveArchive, sessionStateDir } from '../storage/index.js'
+} from './registry'
+import { SESSION_PLUGIN_NAME } from '../../shared/constants'
+import { SESSION_ARCHIVE_FILE } from '../constants'
+import { archiveHooks } from '../hooks'
+import { storage } from '../storage'
 import {
   registryArchiveSurface,
   removeArchivedSessionsFromRegistry,
@@ -28,12 +26,12 @@ import {
   requireArchiveSession,
   requireDeletionSurfaces,
   restoreSessionWorkspaceAccounting,
-} from './registry.js'
+} from './registry'
 import {
   findSession,
   removeSessionDataDir,
   sessionCwd,
-} from './session-files.js'
+} from './session-files'
 
 /** 组装 GET /archived 的载荷：宿主归档集合 id + 每个会话的创建元数据（读 host session header）。 */
 export function buildArchivedPayload(ctx: HostContext): ArchivedListPayload {
@@ -101,8 +99,21 @@ export async function unarchiveSession(ctx: HostContext, body: Record<string, un
  * 归档集合。迁移成功的记录从旧文件中移除；仍失败的（如会话已不存在）保留在旧
  * 文件中，下次启动幂等重试 —— 绝不因单次失败丢弃用户数据。
  */
-export async function migrateLegacyArchive(ctx: HostContext, dshHome: string): Promise<void> {
-  const legacy = await loadArchive(dshHome)
+export async function migrateLegacyArchive(ctx: HostContext): Promise<void> {
+  let legacy: ArchiveDocument = {}
+  try {
+    const parsed = await storage.getItem<ArchiveDocument>(SESSION_ARCHIVE_FILE)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const out: ArchiveDocument = {}
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        const record = value as Partial<{ sessionId: string, archivedAt: number }>
+        if (typeof key === 'string' && typeof record?.sessionId === 'string' && key === record.sessionId)
+          out[key] = record as ArchiveDocument[string]
+      }
+      legacy = out
+    }
+  }
+  catch { /* 文件缺失/损坏按空归档处理。 */ }
   const sessionIds = Object.keys(legacy)
   if (sessionIds.length === 0)
     return
@@ -129,14 +140,14 @@ export async function migrateLegacyArchive(ctx: HostContext, dshHome: string): P
   }
   try {
     if (failed.length === 0) {
-      rmSync(join(sessionStateDir(dshHome), SESSION_ARCHIVE_FILE), { force: true })
+      await storage.removeItem(SESSION_ARCHIVE_FILE)
     }
     else {
       // 只保留未迁移成功的记录，避免下次启动重复迁移已成功的会话。
       const remaining: ArchiveDocument = {}
       for (const sessionId of failed)
         remaining[sessionId] = legacy[sessionId]
-      await saveArchive(remaining, dshHome)
+      await storage.setItem(SESSION_ARCHIVE_FILE, `${JSON.stringify(remaining, null, 2)}\n`)
     }
   }
   catch {
@@ -149,7 +160,7 @@ export async function migrateLegacyArchive(ctx: HostContext, dshHome: string): P
  * 彻底删除一批归档会话——删除事务的核心实现（见文件头的事务顺序）。
  * 所有 id 共用一次预检、一次注册表事务，杜绝逐会话部分删除。
  */
-async function permanentlyDeleteSessions(ctx: HostContext, dshHome: string, rawIds: readonly string[]): Promise<{ ok: true }> {
+async function permanentlyDeleteSessions(ctx: HostContext, rawIds: readonly string[]): Promise<{ ok: true }> {
   const ids = [...new Set(rawIds.map(String).filter(Boolean))]
   if (ids.length === 0)
     throw new Error('缺少 sessionIds')
@@ -163,7 +174,7 @@ async function permanentlyDeleteSessions(ctx: HostContext, dshHome: string, rawI
   let removed = 0
   for (const sessionId of ids) {
     try {
-      if (removeSessionDataDir(dshHome, sessionId))
+      if (removeSessionDataDir(sessionId))
         removed += 1
     }
     catch (error) {
@@ -186,24 +197,24 @@ async function permanentlyDeleteSessions(ctx: HostContext, dshHome: string, rawI
 }
 
 /** 彻底删除一个归档会话（成员校验 + 物理删除 + 记账更新）。 */
-export async function permanentlyDeleteSession(ctx: HostContext, dshHome: string, body: Record<string, unknown>): Promise<{ ok: true }> {
+export async function permanentlyDeleteSession(ctx: HostContext, body: Record<string, unknown>): Promise<{ ok: true }> {
   const sessionId = String(body.sessionId ?? '')
   if (!sessionId)
     throw new Error('缺少 sessionId')
-  return permanentlyDeleteSessions(ctx, dshHome, [sessionId])
+  return permanentlyDeleteSessions(ctx, [sessionId])
 }
 
 /** 彻底删除指定归档会话（先物理删除全部，再批量更新记账）。 */
-export async function permanentlyDeleteSelected(ctx: HostContext, dshHome: string, body: Record<string, unknown>): Promise<{ ok: true }> {
+export async function permanentlyDeleteSelected(ctx: HostContext, body: Record<string, unknown>): Promise<{ ok: true }> {
   const rawIds = body.sessionIds
   if (!Array.isArray(rawIds) || rawIds.length === 0)
     throw new Error('缺少 sessionIds')
-  return permanentlyDeleteSessions(ctx, dshHome, rawIds as string[])
+  return permanentlyDeleteSessions(ctx, rawIds as string[])
 }
 
 /** 彻底删除全部已归档会话（先物理删除全部，再批量更新记账）。 */
-export async function permanentlyDeleteAll(ctx: HostContext, dshHome: string): Promise<{ ok: true }> {
+export async function permanentlyDeleteAll(ctx: HostContext): Promise<{ ok: true }> {
   const registry = ctx.workspaceRegistry as { archivedSessionIds?: readonly string[] } | undefined
   const ids = [...(registry?.archivedSessionIds ?? [])]
-  return permanentlyDeleteSessions(ctx, dshHome, ids)
+  return permanentlyDeleteSessions(ctx, ids)
 }

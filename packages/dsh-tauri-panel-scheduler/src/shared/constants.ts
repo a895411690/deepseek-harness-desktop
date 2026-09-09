@@ -12,7 +12,7 @@ export const SCHEDULER_PLUGIN_NAME = 'dsh-tauri-panel-scheduler'
 export const SCHEDULER_API_PREFIX = '/api/dsh-scheduler'
 
 /** 计划类型集合（与 DSH automation 工具的语义一一对应）。 */
-export const SCHEDULE_KINDS = ['daily', 'interval', 'workdays', 'weekly'] as const
+export const SCHEDULE_KINDS = ['once', 'hourly', 'daily', 'interval', 'workdays', 'weekly', 'monthly', 'custom'] as const
 
 /** 星期枚举（IATA 三字母，与 DSH automation 一致）。 */
 export const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const

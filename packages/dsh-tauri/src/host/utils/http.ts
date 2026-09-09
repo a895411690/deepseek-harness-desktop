@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 /**
  * host/utils/http.ts — 宿主侧 HTTP 路由工具：连接鉴权包装、JSON 请求体读取、
  * JSON 响应发送与 routeHandler 方法/回环约束。
@@ -9,11 +10,10 @@
  *   - 请求体超限即 413，解析失败 400，绝不静默接受。
  */
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { ConnectionGate, JsonBody, RouteFunction, RouteHandler } from '../types/index.js'
+import type { ConnectionGate, JsonBody, RouteFunction, RouteHandler } from '../types'
 import { Buffer } from 'node:buffer'
 
-export type { ConnectionGate, JsonBody, RouteFunction, RouteHandler, RouteResult } from '../types/index.js'
+export type { ConnectionGate, JsonBody, RouteFunction, RouteHandler, RouteResult } from '../types'
 
 export class HttpError extends Error {
   constructor(message: string, readonly statusCode: number) {

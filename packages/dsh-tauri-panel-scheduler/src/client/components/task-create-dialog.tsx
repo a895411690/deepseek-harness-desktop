@@ -12,12 +12,13 @@
 import type { ReactElement } from 'react'
 import type { ModelTranslate, ScheduleForm, SchedulerOptions, TaskFormState, Translate, Weekday } from '../types'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { MenuSelect, useMountStyle } from 'dsh-tauri-ui/client'
 import { useRef, useState } from 'react'
-import { SCHEDULER_CLASSES as K } from '../constants'
-import { applyCreateTask, applyUpdateTask } from '../store'
+import { TASK_CREATE_DIALOG_STYLE_ID } from '../constants'
+import { applyCreateTask, applyUpdateTask } from '../service/scheduler'
 import { MenuHostProvider } from './menu'
-import { MenuSelect } from './menu-select'
 import { ModelPicker } from './model-picker'
+import taskCreateDialogStyle from './task-create-dialog.cssr'
 
 export interface TaskCreateDialogProps {
   t: Translate
@@ -57,13 +58,21 @@ const TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
 /** 间隔时长选项（分钟）。 */
 const INTERVAL_OPTIONS = [5, 10, 15, 30, 45, 60, 90, 120, 180, 240, 360, 720, 1440]
 
-const SCHEDULE_KINDS = ['daily', 'interval', 'workdays', 'weekly'] as const
+const SCHEDULE_KINDS = ['once', 'hourly', 'daily', 'interval', 'workdays', 'weekly', 'monthly', 'custom'] as const
 
 /** 各计划模式的默认参数（切换模式时初始化，保证字段齐整）。 */
 function defaultScheduleFor(kind: ScheduleForm['kind']): ScheduleForm {
   switch (kind) {
+    case 'once':
+      return { kind: 'once', at: new Date(Date.now() + 60 * 60 * 1000).toISOString() }
+    case 'hourly':
+      return { kind: 'hourly', minute: 0 }
     case 'interval':
       return { kind: 'interval', everyMinutes: 30 }
+    case 'monthly':
+      return { kind: 'monthly', day: 1, time: '09:00' }
+    case 'custom':
+      return { kind: 'custom', everyDays: 2, time: '09:00' }
     case 'weekly':
       return { kind: 'weekly', weekdays: ['MO'], time: '09:00' }
     case 'workdays':
@@ -90,6 +99,7 @@ function makeModelT(t: Translate): ModelTranslate {
 }
 
 export function TaskCreateDialog({ t, options, onClose, taskId, initial }: TaskCreateDialogProps): ReactElement {
+  useMountStyle(taskCreateDialogStyle, TASK_CREATE_DIALOG_STYLE_ID)
   const [form, setForm] = useState<TaskFormState>(() => initial ?? {
     name: '',
     schedule: { kind: 'daily', time: '09:00' },
@@ -142,9 +152,7 @@ export function TaskCreateDialog({ t, options, onClose, taskId, initial }: TaskC
   }
 
   const scheduleKind = form.schedule.kind
-  const currentTime = (form.schedule.kind === 'daily' || form.schedule.kind === 'workdays' || form.schedule.kind === 'weekly')
-    ? form.schedule.time
-    : '09:00'
+  const currentTime = ('time' in form.schedule) ? form.schedule.time : '09:00'
   const currentEveryMinutes = form.schedule.kind === 'interval' ? form.schedule.everyMinutes : 30
   const currentWeekday: Weekday = form.schedule.kind === 'weekly' ? (form.schedule.weekdays[0] ?? 'MO') : 'MO'
 
@@ -180,21 +188,21 @@ export function TaskCreateDialog({ t, options, onClose, taskId, initial }: TaskC
         title={taskId ? t('editDialogTitle') : t('createDialogTitle')}
         description={t('dialogHint')}
         closeLabel={t('close')}
-        className={K.modal}
+        className="dshp-scheduler__modal"
         footer={(
           <>
-            <button className={K.btn} type="button" disabled={saving} onClick={closeSafe}>{t('cancel')}</button>
-            <button className={`${K.btn} ${K.btnPrimary}`} type="button" disabled={saving} onClick={() => void onSave()}>
+            <button className="dshp-scheduler__btn" type="button" disabled={saving} onClick={closeSafe}>{t('cancel')}</button>
+            <button className={`${'dshp-scheduler__btn'} ${'dshp-scheduler__btn--primary'}`} type="button" disabled={saving} onClick={() => void onSave()}>
               {t('save')}
             </button>
           </>
         )}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <label className={K.field}>
-            <span className={K.fieldLabel}>{t('taskName')}</span>
+          <label className="dshp-scheduler__field">
+            <span className="dshp-scheduler__field-label">{t('taskName')}</span>
             <input
-              className={K.input}
+              className="dshp-scheduler__input"
               type="text"
               value={form.name}
               placeholder={t('taskNamePlaceholder')}
@@ -202,11 +210,11 @@ export function TaskCreateDialog({ t, options, onClose, taskId, initial }: TaskC
             />
           </label>
 
-          <div className={K.field}>
-            <span className={K.fieldLabel}>{t('schedule')}</span>
-            <div className={K.inline}>
+          <div className="dshp-scheduler__field">
+            <span className="dshp-scheduler__field-label">{t('schedule')}</span>
+            <div className="dshp-scheduler__inline">
               <select
-                className={`${K.input} ${K.selectInput} ${K.inlineSelect}`}
+                className={`${'dshp-scheduler__input'} ${'dshp-scheduler__select-input'} ${'dshp-scheduler__inline-select'}`}
                 value={scheduleKind}
                 aria-label={t('schedule')}
                 onChange={event => setForm(state => ({ ...state, schedule: defaultScheduleFor(event.target.value as ScheduleForm['kind']) }))}
@@ -216,68 +224,89 @@ export function TaskCreateDialog({ t, options, onClose, taskId, initial }: TaskC
                 ))}
               </select>
 
-              {scheduleKind === 'interval'
-                ? (
-                    <select
-                      className={`${K.input} ${K.selectInput} ${K.inlineSelectAuto}`}
-                      value={currentEveryMinutes}
-                      aria-label={t('scheduleEveryMinutes')}
-                      onChange={event => setSchedule({ kind: 'interval', everyMinutes: Number(event.target.value) })}
-                    >
-                      {INTERVAL_OPTIONS.map(minutes => <option key={minutes} value={minutes}>{`${minutes} ${t('minuteShort')}`}</option>)}
-                    </select>
-                  )
-                : scheduleKind === 'weekly'
-                  ? (
-                      <>
-                        <select
-                          className={`${K.input} ${K.selectInput} ${K.inlineSelectAuto}`}
-                          value={currentWeekday}
-                          aria-label={t('scheduleWeekdays')}
-                          onChange={event => setSchedule({ kind: 'weekly', weekdays: [event.target.value as Weekday], time: currentTime })}
-                        >
-                          {WEEKDAYS.map(day => <option key={day} value={day}>{t(WEEKDAY_KEYS[day])}</option>)}
-                        </select>
-                        <select
-                          className={`${K.input} ${K.selectInput} ${K.inlineSelectAuto}`}
-                          value={currentTime}
-                          aria-label={t('scheduleTime')}
-                          onChange={event => setSchedule({ ...form.schedule, time: event.target.value } as ScheduleForm)}
-                        >
-                          {TIME_OPTIONS.map(time => <option key={time} value={time}>{time}</option>)}
-                        </select>
-                      </>
-                    )
-                  : (
-                      <select
-                        className={`${K.input} ${K.selectInput} ${K.inlineSelectAuto}`}
-                        value={currentTime}
-                        aria-label={t('scheduleTime')}
-                        onChange={event => setSchedule({ ...form.schedule, time: event.target.value } as ScheduleForm)}
-                      >
-                        {TIME_OPTIONS.map(time => <option key={time} value={time}>{time}</option>)}
-                      </select>
-                    )}
+              {scheduleKind === 'once'
+                ? <input className="dshp-scheduler__input dshp-scheduler__schedule-once" type="datetime-local" value={String(form.schedule.at).slice(0, 16)} onChange={event => setSchedule({ kind: 'once', at: new Date(event.target.value).toISOString() })} />
+                : scheduleKind === 'hourly'
+                  ? <select className="dshp-scheduler__input" value={form.schedule.minute} onChange={event => setSchedule({ kind: 'hourly', minute: Number(event.target.value) })}>{Array.from({ length: 60 }, (_, minute) => <option key={minute} value={minute}>{`: ${String(minute).padStart(2, '0')}`}</option>)}</select>
+                  : scheduleKind === 'monthly'
+                    ? (
+                        <>
+                          <input className="dshp-scheduler__input dshp-scheduler__inline-select--auto" type="number" min={1} max={31} value={form.schedule.kind === 'monthly' ? form.schedule.day : 1} aria-label={t('scheduleMonthDay')} onChange={event => setSchedule({ kind: 'monthly', day: Number(event.target.value), time: currentTime })} />
+                          <select className="dshp-scheduler__input dshp-scheduler__select-input dshp-scheduler__inline-select--auto" value={currentTime} aria-label={t('scheduleTime')} onChange={event => setSchedule({ kind: 'monthly', day: form.schedule.kind === 'monthly' ? form.schedule.day : 1, time: event.target.value })}>{TIME_OPTIONS.map(time => <option key={time} value={time}>{time}</option>)}</select>
+                        </>
+                      )
+                    : scheduleKind === 'custom'
+                      ? (
+                          <>
+                            <input className="dshp-scheduler__input dshp-scheduler__inline-select--auto" type="number" min={1} max={366} value={form.schedule.kind === 'custom' ? form.schedule.everyDays : 1} aria-label={t('scheduleEveryDays')} onChange={event => setSchedule({ kind: 'custom', everyDays: Number(event.target.value), time: currentTime })} />
+                            <span>{t('dayShort')}</span>
+                            <select className="dshp-scheduler__input dshp-scheduler__select-input dshp-scheduler__inline-select--auto" value={currentTime} aria-label={t('scheduleTime')} onChange={event => setSchedule({ kind: 'custom', everyDays: form.schedule.kind === 'custom' ? form.schedule.everyDays : 1, time: event.target.value })}>{TIME_OPTIONS.map(time => <option key={time} value={time}>{time}</option>)}</select>
+                          </>
+                        )
+                      : scheduleKind === 'interval'
+                        ? (
+                            <select
+                              className={`${'dshp-scheduler__input'} ${'dshp-scheduler__select-input'} ${'dshp-scheduler__inline-select--auto'}`}
+                              value={currentEveryMinutes}
+                              aria-label={t('scheduleEveryMinutes')}
+                              onChange={event => setSchedule({ kind: 'interval', everyMinutes: Number(event.target.value), anchor: form.schedule.kind === 'interval' ? form.schedule.anchor : undefined })}
+                            >
+                              {INTERVAL_OPTIONS.map(minutes => <option key={minutes} value={minutes}>{`${minutes} ${t('minuteShort')}`}</option>)}
+                            </select>
+                          )
+                        : scheduleKind === 'weekly'
+                          ? (
+                              <>
+                                <select
+                                  className={`${'dshp-scheduler__input'} ${'dshp-scheduler__select-input'} ${'dshp-scheduler__inline-select--auto'}`}
+                                  value={currentWeekday}
+                                  aria-label={t('scheduleWeekdays')}
+                                  onChange={event => setSchedule({ kind: 'weekly', weekdays: [event.target.value as Weekday], time: currentTime })}
+                                >
+                                  {WEEKDAYS.map(day => <option key={day} value={day}>{t(WEEKDAY_KEYS[day])}</option>)}
+                                </select>
+                                <select
+                                  className={`${'dshp-scheduler__input'} ${'dshp-scheduler__select-input'} ${'dshp-scheduler__inline-select--auto'}`}
+                                  value={currentTime}
+                                  aria-label={t('scheduleTime')}
+                                  onChange={event => setSchedule({ ...form.schedule, time: event.target.value } as ScheduleForm)}
+                                >
+                                  {TIME_OPTIONS.map(time => <option key={time} value={time}>{time}</option>)}
+                                </select>
+                              </>
+                            )
+                          : (
+                              <select
+                                className={`${'dshp-scheduler__input'} ${'dshp-scheduler__select-input'} ${'dshp-scheduler__inline-select--auto'}`}
+                                value={currentTime}
+                                aria-label={t('scheduleTime')}
+                                onChange={event => setSchedule({ ...form.schedule, time: event.target.value } as ScheduleForm)}
+                              >
+                                {TIME_OPTIONS.map(time => <option key={time} value={time}>{time}</option>)}
+                              </select>
+                            )}
             </div>
           </div>
 
-          <div className={K.field}>
-            <span className={K.fieldLabel}>{t('schedulePrompt')}</span>
-            <div className={K.promptWrap}>
+          <div className="dshp-scheduler__field">
+            <span className="dshp-scheduler__field-label">{t('schedulePrompt')}</span>
+            <div className="dshp-scheduler__prompt-wrap">
               <textarea
-                className={K.textarea}
+                className="dshp-scheduler__textarea"
                 value={form.prompt}
                 placeholder={t('schedulePromptPlaceholder')}
                 onChange={event => setForm(state => ({ ...state, prompt: event.target.value }))}
               />
-              <div className={K.composer}>
+              <div className="dshp-scheduler__composer">
                 <MenuSelect
+                  variant="pill"
                   label={t('workspace')}
                   value={form.workspaceId}
                   options={workspaceOptions}
                   onSelect={id => setForm(state => ({ ...state, workspaceId: id }))}
                 />
                 <MenuSelect
+                  variant="pill"
                   label={t('permission')}
                   value={form.permission}
                   options={permissionOptions}
@@ -309,8 +338,8 @@ export function TaskCreateDialog({ t, options, onClose, taskId, initial }: TaskC
             </div>
           </div>
         </div>
-        {error ? <p className={K.error} role="alert">{error}</p> : null}
-        <div className={K.flyoutRoot} ref={setMenuHost} />
+        {error ? <p className="dshp-scheduler__error" role="alert">{error}</p> : null}
+        <div className="dshp-scheduler__flyout-root" ref={setMenuHost} />
       </Modal>
     </MenuHostProvider>
   )

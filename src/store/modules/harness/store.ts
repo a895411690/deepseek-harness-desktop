@@ -842,8 +842,10 @@ export const harness = defineStore({
       }
     },
 
-    /** 从快照还原并继续检测：优先用单插件快照还原问题插件（优先级高于卸载）；
-     * 仅对传入的（确有快照的）插件还原，单项失败不阻断其它项。还原成功后重启并重新检测。 */
+    /**
+     * 从快照还原并继续检测：优先用单插件快照还原问题插件（优先级高于卸载）；
+     * 仅对传入的（确有快照的）插件还原，单项失败不阻断其它项。还原成功后重启并重新检测。
+     */
     async restoreAndRedetect(ids: readonly string[]) {
       if (this.recovery.busy || ids.length === 0)
         return
@@ -908,9 +910,11 @@ export const harness = defineStore({
       })
     },
 
-    /** 进入安全模式：切到 safe 档案（仅核心 bundles、无用户插件）并重启服务。
+    /**
+     * 进入安全模式：切到 safe 档案（仅核心 bundles、无用户插件）并重启服务。
      * 启动失败的插件（如 pending waiting for service）被隔离，应用先恢复可用；
-     * 用户在档案列表切回原档案即退出安全模式。 */
+     * 用户在档案列表切回原档案即退出安全模式。
+     */
     async enterSafeMode() {
       if (this.busyAction)
         return

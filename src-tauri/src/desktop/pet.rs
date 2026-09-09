@@ -420,6 +420,17 @@ pub fn init_pet_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
+/// 重载桌宠窗口页面（预设宠物更新/替换后调用）。
+///
+/// 桌宠窗口按 `activePet` 只拉取一次协议资源（config + webm manifest），
+/// 更新换入新文件后 URL 不变，WebView 可能继续命中缓存里的旧 webm；
+/// 显式 reload 让新资源立即生效。窗口隐藏时 reload 同样安全（页面本身常驻）。
+pub fn reload_pet_window<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window(PET_WINDOW_LABEL) {
+        let _ = window.eval("location.reload()");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

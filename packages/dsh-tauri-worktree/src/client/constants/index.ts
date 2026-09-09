@@ -41,50 +41,9 @@ export const HANDOFF_WINDOW_MS = 60_000
 
 export const MODE_SELECT_STYLE_ID = '@deepseek-ai/dsh-tauri-worktree/ModeSelect.module.css'
 export const WORKTREE_STYLE_ID = '@deepseek-ai/dsh-tauri-worktree/SurfaceDialog.module.css'
+export const SURFACE_STYLE_ID = '@deepseek-ai/dsh-tauri-worktree/Surface.module.css'
+export const DIALOG_STYLE_ID = '@deepseek-ai/dsh-tauri-worktree/Dialog.module.css'
 export const SESSION_ICON_STYLE_ID = '@deepseek-ai/dsh-tauri-worktree/SessionBranchIcon.module.css'
-
-export const MODE_SELECT_CLASSES = {
-  anchor: 'dsh-tauri-worktree-mode-anchor',
-  chevron: 'dsh-tauri-worktree-mode-chevron',
-  host: 'dsh-tauri-worktree-mode-host',
-  icon: 'dsh-tauri-worktree-mode-icon',
-  trigger: 'dsh-tauri-worktree-mode-trigger',
-  triggerOpen: 'dsh-tauri-worktree-mode-trigger-open',
-} as const
-
-export const worktreeStyles = {
-  surface: 'dsh-tauri-worktree-surface',
-  surfaceBar: 'dsh-tauri-worktree-surface-bar',
-  surfaceContent: 'dsh-tauri-worktree-surface-content',
-  surfaceLabel: 'dsh-tauri-worktree-surface-label',
-  action: 'dsh-tauri-worktree-action',
-  actionLog: 'dsh-tauri-worktree-action-log',
-  actionDanger: 'dsh-tauri-worktree-action-danger',
-  spacer: 'dsh-tauri-worktree-spacer',
-  logs: 'dsh-tauri-worktree-logs',
-  logsOpen: 'dsh-tauri-worktree-logs-open',
-  logsInner: 'dsh-tauri-worktree-logs-inner',
-  logsPanel: 'dsh-tauri-worktree-logs-panel',
-  logLine: 'dsh-tauri-worktree-log-line',
-  modal: 'dsh-tauri-worktree-modal',
-  card: 'dsh-tauri-worktree-dialog-card',
-  title: 'dsh-tauri-worktree-dialog-title',
-  body: 'dsh-tauri-worktree-dialog-body',
-  field: 'dsh-tauri-worktree-dialog-field',
-  fieldLabel: 'dsh-tauri-worktree-dialog-field-label',
-  inputWrap: 'dsh-tauri-worktree-dialog-input-wrap',
-  input: 'dsh-tauri-worktree-dialog-input',
-  pathRow: 'dsh-tauri-worktree-dialog-path-row',
-  pathKey: 'dsh-tauri-worktree-dialog-path-key',
-  pathValue: 'dsh-tauri-worktree-dialog-path-value',
-  error: 'dsh-tauri-worktree-dialog-error',
-  footer: 'dsh-tauri-worktree-dialog-footer',
-  button: 'dsh-tauri-worktree-dialog-button',
-  buttonGhost: 'dsh-tauri-worktree-dialog-button-ghost',
-  buttonPrimary: 'dsh-tauri-worktree-dialog-button-primary',
-  buttonDanger: 'dsh-tauri-worktree-dialog-button-danger',
-  buttonDisabled: 'dsh-tauri-worktree-dialog-button-disabled',
-} as const
 
 export const SESSION_ICON_ATTRIBUTE = 'data-dsh-worktree-icon'
 export const SIDEBAR_SELECTOR = '[data-slot="sidebar"]'

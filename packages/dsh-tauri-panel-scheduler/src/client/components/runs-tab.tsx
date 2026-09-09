@@ -4,8 +4,10 @@
 
 import type { ReactElement } from 'react'
 import type { RunView, Translate } from '../types'
-import { SCHEDULER_CLASSES as K } from '../constants'
+import { useMountStyle } from 'dsh-tauri-ui/client'
+import { RUNS_TAB_STYLE_ID } from '../constants'
 import { formatLocalTime } from '../utils/schedule'
+import runsTabStyle from './runs-tab.cssr'
 
 export interface RunsTabProps {
   t: Translate
@@ -17,6 +19,7 @@ function statusKey(t: Translate, status: RunView['status']): string {
   switch (status) {
     case 'succeeded': return t('succeeded')
     case 'failed': return t('failed')
+    case 'interrupted': return t('interrupted')
     case 'skipped': return t('skipped')
     case 'cancelled': return t('cancelled')
     case 'queued': return t('queued')
@@ -25,21 +28,22 @@ function statusKey(t: Translate, status: RunView['status']): string {
 }
 
 export function RunsTab({ t, runs, onDelete }: RunsTabProps): ReactElement {
+  useMountStyle(runsTabStyle, RUNS_TAB_STYLE_ID)
   if (runs.length === 0)
-    return <p className={K.empty}>{t('emptyRuns')}</p>
+    return <p className="dshp-scheduler__empty">{t('emptyRuns')}</p>
   return (
     <>
-      <ul className={K.runsList}>
+      <ul className="dshp-scheduler__runs-list">
         {runs.map(run => (
-          <li key={run.id} className={K.runRow}>
-            <div className={K.runMain}>
-              <span className={K.runName} title={run.taskName}>{run.taskName}</span>
-              {run.error ? <p className={K.runError}>{run.error}</p> : null}
+          <li key={run.id} className="dshp-scheduler__run-row">
+            <div className="dshp-scheduler__run-main">
+              <span className="dshp-scheduler__run-name" title={run.taskName}>{run.taskName}</span>
+              {run.error ? <p className="dshp-scheduler__run-error">{run.error}</p> : null}
             </div>
-            <div className={K.runMeta}>
-              {run.status !== 'succeeded' && <span className={K.chip} data-status={run.status}>{statusKey(t, run.status)}</span>}
-              <span className={K.runTime}>{formatLocalTime(run.startedAt) ?? ''}</span>
-              <button type="button" className={K.runDelete} onClick={() => onDelete(run.id)} aria-label={t('deleteRun')}>{t('delete')}</button>
+            <div className="dshp-scheduler__run-meta">
+              {run.status !== 'succeeded' && <span className="dshp-scheduler__chip" data-status={run.status}>{statusKey(t, run.status)}</span>}
+              <span className="dshp-scheduler__run-time">{formatLocalTime(run.startedAt) ?? ''}</span>
+              <button type="button" className="dshp-scheduler__run-delete" onClick={() => onDelete(run.id)} aria-label={t('deleteRun')}>{t('delete')}</button>
             </div>
           </li>
         ))}

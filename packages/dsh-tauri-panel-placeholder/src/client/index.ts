@@ -14,10 +14,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
  * 无业务逻辑：样板只演示协议接入点与「会话区替换」的最小形态。
  */
 import type { ClientContext } from 'dsh-tauri/client'
-import { PLUGIN_ID } from './constants'
-import { installPanelLocale } from './locales'
-import { installPanel } from './register/panel'
-import { mountPlaceholderStyles } from './styles'
+import { mountStyle } from 'dsh-tauri-ui/client'
+import { PLUGIN_ID, STYLE_ID } from './constants'
+import { registerPanelLocale } from './locales'
+import { registerPanel } from './register/panel'
+import placeholderStyle from './styles/index.cssr'
 
 /** 插件显示名（诊断元数据）。 */
 export const name = PLUGIN_ID
@@ -31,9 +32,9 @@ export const inject = ['slots', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(
-    () => mountPlaceholderStyles(),
+    () => mountStyle(placeholderStyle, STYLE_ID),
     `${PLUGIN_ID}: styles`,
   )
-  installPanelLocale(ctx)
-  installPanel(ctx)
+  registerPanelLocale(ctx)
+  registerPanel(ctx)
 }

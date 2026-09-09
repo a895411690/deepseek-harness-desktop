@@ -21,32 +21,35 @@ import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ReactElement } from 'react'
 import type { ArchivePanelProps, ArchiveSort } from '../types'
 import { Button, Input, Menu, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Ellipsis, FolderOpen, Icon, Magnifier, MenuSelect, TrashBin, useMountStyle } from 'dsh-tauri-ui/client'
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
-import { postOpenSessionDir } from '../apis'
-import { SESSION_CLASSES as K } from '../constants'
+import { SESSION_STYLE_ID } from '../constants'
 import { text, useLocale } from '../locales'
 import {
-  archiveStore,
   clearArchive,
   deleteSession,
   deleteWorkspaceSessions,
+  postOpenSessionDir,
   refreshArchived,
+  unarchiveSession,
+} from '../service/archive'
+import {
+  archiveStore,
   setQuery,
   setSort,
   setWorkspaceFilter,
-  unarchiveSession,
   useArchiveUi,
 } from '../store'
 import { buildRows, formatTime, projectOptions, unionIds } from '../utils/archive-rows'
 import { groupArchive } from '../utils/sort'
-import { IconEllipsis, IconFolderOpen, IconMagnifier, IconTrashBin } from './icons'
-import { MenuSelect } from './menu-select'
+import archivePanelStyle from './archive-panel.cssr'
 
 /** 打开的删除确认弹窗：null 关闭；'single' 删除单个会话；'all' 删除全部。 */
 type DeleteConfirm = null | { kind: 'single', sessionId: string } | { kind: 'all' } | { kind: 'workspace', workspaceTitle: string, sessionIds: string[] }
 
 /** 设置页「归档」分区。 */
 export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
+  useMountStyle(archivePanelStyle, SESSION_STYLE_ID)
   const ui = useArchiveUi()
   useLocale()
   const [confirm, setConfirm] = useState<DeleteConfirm>(null)
@@ -149,7 +152,7 @@ export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
       <Button variant="ghost" onClick={() => setConfirm(null)}>{text('cancel')}</Button>
       <Button
         variant="outline"
-        className={K.deleteBtn}
+        className="dshp-session__delete-btn"
         disabled={ui.pending}
         onClick={handleConfirmDelete}
       >
@@ -159,32 +162,36 @@ export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
   )
 
   return (
-    <div className={K.page}>
-      <div className={K.header}>
-        <h1 className={K.title}>{text('archiveTitle')}</h1>
+    <div className="dshp-session__page">
+      <div className="dshp-session__header">
+        <h1 className="dshp-session__title">{text('archiveTitle')}</h1>
         <Button
           type="button"
           variant="ghost"
-          icon={<IconTrashBin />}
-          className={K.deleteAll}
+          icon={<Icon as={TrashBin} />}
+          className="dshp-session__delete-all"
           style={{ color: 'var(--dsw-alias-state-error-primary)' }}
           disabled={busy}
           onClick={() => setConfirm({ kind: 'all' })}
         >
-          <span className={K.deleteBtnText}>{text('deleteAll')}</span>
+          <span className="dshp-session__delete-btn-text">{text('deleteAll')}</span>
         </Button>
       </div>
 
-      <div className={K.toolbar}>
+      <div className="dshp-session__toolbar">
         <Input
-          className={K.search}
+          className="dshp-session__search"
           value={ui.query}
           placeholder={text('searchPlaceholder')}
           aria-label={text('searchPlaceholder')}
-          icon={<IconMagnifier />}
+          icon={<Icon as={Magnifier} />}
           onChange={event => setQuery(event.target.value)}
         />
         <MenuSelect
+          variant="default"
+          triggerClassName="dshp-session__menu-select"
+          labelClassName="dshp-session__menu-select-label"
+          chevronClassName="dshp-session__menu-select-chevron"
           label={text('sortLabel')}
           value={ui.sort}
           onSelect={id => setSort(id as ArchiveSort)}
@@ -195,6 +202,10 @@ export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
           ]}
         />
         <MenuSelect
+          variant="default"
+          triggerClassName="dshp-session__menu-select"
+          labelClassName="dshp-session__menu-select-label"
+          chevronClassName="dshp-session__menu-select-chevron"
           label={text('allProjects')}
           value={ui.workspaceId}
           onSelect={setWorkspaceFilter}
@@ -206,19 +217,19 @@ export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
         />
       </div>
 
-      {ui.error && <div className={K.error}>{ui.error}</div>}
+      {ui.error && <div className="dshp-session__error">{ui.error}</div>}
 
       {!ui.loading && visible.length === 0 && (
-        <div className={K.empty}>{query ? text('noResults') : text('empty')}</div>
+        <div className="dshp-session__empty">{query ? text('noResults') : text('empty')}</div>
       )}
 
-      <div className={K.groups}>
+      <div className="dshp-session__groups">
         {groups.map(group => (
-          <section key={group.id} className={K.group}>
-            <div className={K.groupHeader}>
-              <IconFolderOpen />
-              <span className={K.groupTitle}>{group.title || text('ungrouped')}</span>
-              <span className={K.groupCount}>
+          <section key={group.id} className="dshp-session__group">
+            <div className="dshp-session__group-header">
+              <Icon as={FolderOpen} />
+              <span className="dshp-session__group-title">{group.title || text('ungrouped')}</span>
+              <span className="dshp-session__group-count">
                 {group.rows.length}
                 {' '}
                 {text('chats')}
@@ -239,7 +250,7 @@ export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
                 items={[{
                   id: 'delete',
                   label: text('deleteProjectChats'),
-                  icon: <IconTrashBin />,
+                  icon: <Icon as={TrashBin} />,
                   danger: true,
                 } satisfies MenuEntry]}
                 portal
@@ -247,47 +258,47 @@ export function ArchivePanel(props: ArchivePanelProps): ReactElement | null {
                 anchor={(
                   <button
                     type="button"
-                    className={K.groupMenuTrigger}
+                    className="dshp-session__group-menu-trigger"
                     aria-label={text('groupMenuAria')}
                     aria-haspopup="menu"
                     aria-expanded={openGroupMenu === group.id}
                     onClick={() => setOpenGroupMenu(openGroupMenu === group.id ? null : group.id)}
                   >
-                    <IconEllipsis />
+                    <Icon size={12} as={Ellipsis} />
                   </button>
                 )}
               />
             </div>
-            <ul className={K.list}>
+            <ul className="dshp-session__list">
               {group.rows.map(row => (
-                <li key={row.sessionId} className={K.row}>
-                  <div className={K.rowMain}>
+                <li key={row.sessionId} className="dshp-session__row">
+                  <div className="dshp-session__row-main">
                     <button
                       type="button"
-                      className={K.rowTitle}
+                      className="dshp-session__row-title"
                       title={text('openDirectory')}
                       aria-label={`${text('openDirectory')}: ${row.title}`}
                       onClick={() => void handleOpenSessionDirectory(row.sessionId)}
                     >
                       {row.title}
                     </button>
-                    <span className={K.rowTime}>{formatTime(row)}</span>
+                    <span className="dshp-session__row-time">{formatTime(row)}</span>
                   </div>
-                  <div className={K.rowActions}>
+                  <div className="dshp-session__row-actions">
                     <button
                       type="button"
-                      className={K.rowDelete}
+                      className="dshp-session__row-delete"
                       aria-label={text('deleteRowAria')}
                       disabled={busy}
                       onClick={() => setConfirm({ kind: 'single', sessionId: row.sessionId })}
                     >
-                      <IconTrashBin />
+                      <Icon as={TrashBin} />
                     </button>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className={K.unarchive}
+                      className="dshp-session__unarchive"
                       disabled={busy}
                       onClick={() => handleUnarchive(row.sessionId)}
                     >

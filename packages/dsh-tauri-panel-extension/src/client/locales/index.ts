@@ -101,6 +101,14 @@ const zh: Record<string, string> = {
   formatPaste: '粘贴 JSON 配置（mcpServers 包装或单条目均可）',
   formatFill: '解析并切换到表单',
   pasteTransportMismatch: '该行传输方式已锁定，与粘贴配置不一致。',
+  scope: '范围',
+  scopeAll: '全部',
+  global: '全局',
+  profile: 'Profile',
+  shadowed: '已覆盖',
+  globalError: '全局错误',
+  connectivityOk: '连接成功',
+  connectivityFailed: '连接失败',
 }
 
 const en: Record<string, string> = {
@@ -205,7 +213,7 @@ const en: Record<string, string> = {
   pasteTransportMismatch: 'The row transport is locked and differs from the pasted config.',
 }
 
-export function installExtensionLocale(ctx: ExtensionClientContext): void {
+export function registerExtensionLocale(ctx: ExtensionClientContext): void {
   ctx.effect(() => [
     ctx.locale.register(LOCALE_NAMESPACE, 'zh', zh),
     ctx.locale.register(LOCALE_NAMESPACE, 'en', en),

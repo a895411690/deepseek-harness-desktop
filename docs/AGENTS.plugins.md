@@ -58,12 +58,13 @@ packages/<plugin>/
   - `ofetch`：宿主二进制下载（如 GitHub tarball 走 `$fetch.raw`）。
 - **客户端依赖统一由 `dsh-tauri` 承载**：`unstorage` / `hookable` / `ofetch` 只被 `dsh-tauri` 的 client bundle 加载并内联；**其他插件 client 禁止直接 import 这三个包**，一律从 `dsh-tauri/client` 导入：
   - `createHooks`（hookable 命名钩子）
-  - `createLocalStorage(base)`（unstorage localStorage driver；`base` 传插件名、不带冒号，driver 拼 `base:` 前缀防串扰）
-  - `requestJson` / `createJsonClient`（ofetch 统一 JSON 客户端）
+  - `createStorage` / `localStorageDriver`（unstorage；各插件自定义 `const storage = createStorage({ driver: localStorageDriver({ base: PLUGIN_ID }) })`，命名统一 `storage`，读写一律 `storage.getItem/setItem`，不使用 `store(xxx).setItem` 动态工厂）
+  - `fetch`（ofetch 统一 JSON 客户端；非 2xx 错误解析内置 dsh-tauri，调用方不手包 requestJson/createJsonClient）
   - `createLifecycleController`（生命周期控制器）
   - `createAtomicFsStorage(base)` 从 `dsh-tauri` 根导入（宿主侧 unstorage fs + tmp+rename 原子写）。
 - 后果：`dsh-tauri` 的 client bundle 是唯一内联三库的地方；其他插件 client 走外部 `dsh-tauri/client`，不重复内联。
 - 纯 client 插件（dsh-tauri-panel / rightclick / ui 等）通常只需 `dsh-tauri` 一个依赖。
+- 通用 UI 只允许单向复用：消费插件从 `dsh-tauri-ui/client` 导入 `MenuSelect`、`styles` 和共享图标；`dsh-tauri-ui/client` 不得反向依赖消费插件。Gravity 图标由 `dsh-tauri-ui` 单点内联，消费插件禁止直接导入 `@gravity-ui/icons`。
 
 ## 基本技术约定
 
@@ -130,39 +131,50 @@ export const PANEL_STYLE_ID = 'dsh-tauri-panel-styles'
 
 ## 样式与 css-render 规则
 
-所有客户端自定义样式使用 [`css-render`](https://css-render.vercel.app/)：
+所有客户端自定义样式使用 [`css-render`](https://css-render.vercel.app/) + [`@css-render/plugin-bem`](https://www.npmjs.com/package/@css-render/plugin-bem)，统一经 `dsh-tauri-ui/client`：
 
 - 不使用 React 静态 inline styles。
 - 不使用 `style.textContent`、手写 `<style>` 注入或 `raw` CSS 字符串绕过 css-render 对象树。
-- CSS 规则拆成 `CssRender().c(selector, properties, children)` 节点。
-- css-render 样式只允许在插件 `apply()` 生命周期中挂载。
-- 样式挂载函数命名为 `mount<Name>Styles`，返回 `() => void` disposer。
-- 样式安装和卸载必须由 `ctx.effect()` 管理。
-- 如果 style id 已由其他生命周期挂载，当前调用不得取得其所有权，也不得在 disposer 中卸载它。
-- hover、focus、active、disabled 等状态优先使用 CSS selector 或 modifier class。
+- **`.cssr.ts` 文件永远只导出 `CNode`**（`export default b('block', ...)`），不导出 mount 函数、不执行 mount。
+- **单组件单 cssr 文件**：`components/my-component.tsx` 配 `components/my-component.cssr.ts`；纯样式（无组件面）放 `client/styles/xxx.cssr.ts`（如 `styles/scheduler.icon.cssr.ts`），不内联到代码中。
+- **统一 cssr 实例**：不各自 `new CssRender()`，一律从 `dsh-tauri-ui/client` 取：
+  - `cssr.c(...)` 普通选择器
+  - `cssr.bem.b('block')` / `cssr.bem.e('elem')` / `cssr.bem.m('mod')`（blockPrefix `.dshp-`，生成 `.dshp-block` / `__elem` / `--mod`，参考 naive-ui `alert/src/styles/index.cssr.ts`）
+  - 例外：`dsh-tauri` 底座（纯消息桥，不依赖 dsh-tauri-ui 以免环依赖）保留自身 `CssRender()` 的侧栏微调样式；其余所有插件必须走共享实例。
+- **统一挂载路线**（`dsh-tauri-ui/client` 暴露）：
+  - 组件内：`useMountStyle(cnode, styleId)` —— 挂载时自动挂、卸载时自动卸。
+  - 命令式（Controller / `ctx.effect`）：`mountStyle(cnode, styleId)` 返回 disposer，交由 `controller.add` 或 `ctx.effect` 返回。
+  - `mountStyle` 幂等（同一 CNode 引用计数），SSR 安全（无 `document` 时 noop）。
+- hover、focus、active、disabled 等状态优先使用 CSS selector 或 modifier class（`m('mod')` / `&:hover`）。
 - 仅保留真正动态的几何值作为 CSS custom property，例如拖拽宽度。
-- 所有动态样式必须可在插件卸载时恢复，不得在 React render 中挂载全局样式。
 - style id 和 class name 使用插件前缀，跨插件协议使用的 class 名称必须保持兼容。
 
 标准模式：
 
 ```ts
-export function mountPanelStyles(): () => void {
-  if (typeof document === 'undefined')
-    return () => {}
+// components/my-component.cssr.ts —— 只导出 CNode
+import { cssr } from 'dsh-tauri-ui/client'
+const { c, bem: { b, e, m } } = cssr
+export default b('my-component', [
+  e('title', { fontSize: '14px' }),
+  m('ghost', { opacity: '.6' }, [c('&:hover', { opacity: 1 })]),
+])
+```
 
-  const cssr = CssRender()
-  if (cssr.find(PANEL_STYLE_ID) !== null)
-    return () => {}
-
-  const style = cssr.c([
-    cssr.c('.dshp-panel', {
-      display: 'flex',
-    }),
-  ])
-  style.mount({ id: PANEL_STYLE_ID, head: true })
-  return () => style.unmount({ id: PANEL_STYLE_ID })
+```tsx
+// components/my-component.tsx —— 组件内自动挂载/卸载
+import { useMountStyle } from 'dsh-tauri-ui/client'
+import myComponentStyle from './my-component.cssr'
+export function MyComponent() {
+  useMountStyle(myComponentStyle, 'dsh-tauri-ui-my-component-styles')
+  return <div className="dshp-my-component">…</div>
 }
+```
+
+```ts
+// apply() / controller —— 命令式挂载
+import { mountStyle } from 'dsh-tauri-ui/client'
+ctx.effect(() => mountStyle(turnNavigationStyle, TURN_NAVIGATION_STYLE_ID), '…: styles')
 ```
 
 ## 客户端 apply 与生命周期规则
@@ -177,8 +189,7 @@ export function mountPanelStyles(): () => void {
 命名按职责区分：
 
 - `mount*Styles`：挂载 css-render 样式并返回 disposer。
-- `install*`：安装 locale、服务、observer、hydration 等运行时能力。
-- `register*`：注册 slot、组件或协议条目（经 `ctx.effect(() => register*(ctx))` 包装，卸载即释放 inject）。
+- `register*`：注册 slot、组件、协议条目、locale、observer、hydration 等运行时能力（**统一 `register*` 前缀，不保留 `install*`**；经 `ctx.effect(() => register*(ctx))` 包装，卸载即释放 inject）。
 - `apply`：插件唯一的总装配入口。
 
 **生命周期控制器（Controller 化）**：需要同时管理 observer / timer / listener / 订阅时，使用 `dsh-tauri/client` 的 `createLifecycleController()`：
@@ -238,7 +249,7 @@ ctx.slots.register(
 ## 构建与部署约定
 
 - 每个包经 `dsh-tauri-tsdown` 的 `defineDshConfig()` 构建：host entry = `src/index.ts`，client entry = `src/client/index.ts`（CJS + ModuleLoader factory）。
-- client bundle 必须把 `unstorage` / `hookable` / `ofetch` / `pathe` 内联（`noExternal`，见 dsh-tauri-tsdown），否则 loader 模块表找不到会报 "missed the module table"；host bundle 保持 external（运行时按依赖解析）。
+- client bundle 必须把 `unstorage` / `hookable` / `ofetch` / `pathe` / `css-render` / `@css-render/plugin-bem`（以及 `@gravity-ui/icons`）内联（`noExternal`，见 dsh-tauri-tsdown 的 `dshClientInline`），否则 loader 模块表找不到会报 "missed the module table"；host bundle 保持 external（运行时按依赖解析）。
 - 桌面端通过 `pnpm build`（prebuild 部署插件到 `src-tauri/resources`）消费各包 dist；不要提交 dist 与部署产物（已被 gitignore）。
 
 ## 退级策略

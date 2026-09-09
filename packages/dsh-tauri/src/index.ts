@@ -13,8 +13,14 @@
  * 从 `dsh-tauri/client` 导入共享工具（compat/store/http/lifecycle/CssRender）。
  */
 
-export { apply } from './host/apply.js'
-export * from './host/service/open.js'
-export * from './host/storage/index.js'
-export * from './host/types/index.js'
-export * from './host/utils/http.js'
+export { apply } from './host/apply'
+export * from './host/service/open'
+export * from './host/storage'
+export * from './host/types'
+export * from './host/utils/http'
+export type { Context } from '@deepseek-ai/cordis'
+export type { AgentHandle, ModelSelection } from '@deepseek-ai/dsh-agent'
+export type { ContentBlock, MessageSource, UserMessage } from '@deepseek-ai/dsh-llm'
+export type { JsonValue, SessionId } from '@deepseek-ai/dsh-session'
+export type { ToolDefinition, ToolExecution, ToolRunContext } from '@deepseek-ai/dsh-tools'
+export type { WorkspaceId } from '@deepseek-ai/dsh-workspace'

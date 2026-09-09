@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 import type { ModeSelectProps } from '../types'
-import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
-
+import { IconChevronDownOutline14 as ChevronDown, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CircleTree, Icon } from 'dsh-tauri-ui/client'
 /**
  * mode-select.tsx — 「标准模式」右侧的会话工作模式选择器。
  *
@@ -19,18 +19,16 @@ import {
   COMPOSER_SEAT_SELECTOR,
   HERO_PRESET_SLOT_SELECTOR,
   MODE_ANCHOR_ATTRIBUTE,
-  MODE_SELECT_CLASSES,
 } from '../constants'
 import { text, useLocale } from '../locales'
+import { attachWorktreeSession, createWorktree } from '../service/actions'
 import {
-  attachWorktreeSession,
-  createWorktree,
   patchSession,
   rememberNewSessionMode,
   useWorktreeSession,
 } from '../store'
+import { addDraftAttachments, draftAttachmentIds, removeDraftAttachment } from '../utils/draft-attachments'
 import { resolveAccessModeGroup, waitForInputActions, waitForSessionListed } from '../utils/worktree'
-import { CircleTreeIcon } from './icons'
 
 export function WorktreeModeSelect(props: ModeSelectProps): ReactElement {
   const { sessionId } = props
@@ -68,7 +66,7 @@ export function WorktreeModeSelect(props: ModeSelectProps): ReactElement {
       if (!host) {
         host = document.createElement('span')
         host.dataset.dshTauriWorktreeMode = sessionId
-        host.className = MODE_SELECT_CLASSES.host
+        host.className = 'dshp-mode-select__host'
       }
       if (target.nextElementSibling !== host)
         target.after(host)
@@ -86,7 +84,7 @@ export function WorktreeModeSelect(props: ModeSelectProps): ReactElement {
 
   return (
     <>
-      <span ref={anchorRef} className={MODE_SELECT_CLASSES.anchor} {...{ [MODE_ANCHOR_ATTRIBUTE]: sessionId }} />
+      <span ref={anchorRef} className="dshp-mode-select__anchor" {...{ [MODE_ANCHOR_ATTRIBUTE]: sessionId }} />
       {portalHost && createPortal(<WorktreeModeControl {...props} />, portalHost)}
     </>
   )
@@ -95,7 +93,7 @@ export function WorktreeModeSelect(props: ModeSelectProps): ReactElement {
 function WorktreeModeControl({ sessionId, useInput, inputActions, sessionsRuntime, workspacesRuntime }: ModeSelectProps): ReactElement | null {
   const state = useWorktreeSession(sessionId)
   const draft = useInput(input => input.draft)
-  const imageIds = useInput(input => input.imageIds)
+  const imageIds = useInput(draftAttachmentIds)
   useLocale()
   const [open, setOpen] = useState(false)
   const submittingRef = useRef(false)
@@ -140,10 +138,10 @@ function WorktreeModeControl({ sessionId, useInput, inputActions, sessionsRuntim
         await attachWorktreeSession(targetSessionId)
         const nextActions = await waitForInputActions(sessionsRuntime, targetSessionId)
         nextActions.setDraft(draft)
-        if (imageIds.length > 0 && !nextActions.addImages(imageIds))
+        if (!addDraftAttachments(nextActions, imageIds))
           throw new Error('无法迁移消息附件到工作树会话')
         inputActions.setDraft('')
-        for (const imageId of imageIds) inputActions.removeImage(imageId)
+        for (const imageId of imageIds) removeDraftAttachment(inputActions, imageId)
         patchSession(sessionId, { mode: 'local', phase: 'idle', loadingLabel: '' })
         sessionsRuntime.open(targetSessionId)
         // 迁移草稿后提交到新工作树会话；submit() 会在进入时同步捕获草稿/附件快照再发送。
@@ -154,7 +152,7 @@ function WorktreeModeControl({ sessionId, useInput, inputActions, sessionsRuntim
           }
           finally {
             nextActions.setDraft('')
-            for (const imageId of imageIds) nextActions.removeImage(imageId)
+            for (const imageId of imageIds) removeDraftAttachment(nextActions, imageId)
           }
         })
         // 源会话完整对话已继承进工作树会话：归档源会话，避免侧边栏多出一个重复会话。
@@ -218,13 +216,13 @@ function WorktreeModeControl({ sessionId, useInput, inputActions, sessionsRuntim
       aria-haspopup="menu"
       aria-expanded={open}
       onClick={() => setOpen(value => !value)}
-      className={open ? `${MODE_SELECT_CLASSES.trigger} ${MODE_SELECT_CLASSES.triggerOpen}` : MODE_SELECT_CLASSES.trigger}
+      className={open ? `${'dshp-mode-select__trigger'} ${'dshp-mode-select__trigger--open'}` : 'dshp-mode-select__trigger'}
     >
-      <span className={MODE_SELECT_CLASSES.icon}>
-        <CircleTreeIcon size={13} />
+      <span className="dshp-mode-select__icon">
+        <Icon as={CircleTree} size={13} />
       </span>
-      <span>{activeLabel}</span>
-      <IconChevronDownOutline14 className={MODE_SELECT_CLASSES.chevron} />
+      <span className="dshp-mode-select__label">{activeLabel}</span>
+      <Icon as={ChevronDown} className="dshp-mode-select__chevron" />
     </button>
   )
 

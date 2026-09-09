@@ -21,15 +21,14 @@ use std::io::{Cursor, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 use zip::ZipArchive;
+use futures_util::StreamExt;
 
 /// 宠物大小百分比合法区间（精灵图缩放 50%–200%，与插件设置页滑条一致）。
 pub const PET_SIZE_MIN: f64 = pet_window::PET_SIZE_MIN_PERCENT;
 pub const PET_SIZE_MAX: f64 = pet_window::PET_SIZE_MAX_PERCENT;
 
-/// 缺省选择对外统一呈现的精确内置宠物 id。
-pub const DEFAULT_ACTIVE_PET_ID: &str = "maid-deepseek-whale";
 /// 导入桌宠资源包的压缩大小上限（32 MiB）。
 const PET_PACKAGE_MAX_BYTES: usize = 32 * 1024 * 1024;
 /// 防止 zip 炸弹的条目数与解压后总大小上限。
@@ -71,7 +70,7 @@ pub struct PetStatus {
     pub enabled: bool,
     /// 桌宠窗口当前是否应显示。
     pub visible: bool,
-    /// 当前桌宠 id；持久值缺省或空白时始终返回内置默认 id。
+    /// 当前桌宠 id；持久值缺省或空白时返回空串（未选择任何宠物）。
     pub active_pet: String,
     /// 宠物大小百分比（50–200，100 = 精灵图原始尺寸）；None = 未设置（默认 100）。
     pub pet_size: Option<f64>,
@@ -140,19 +139,17 @@ pub struct PetAsset {
     pub rows: u8,
 }
 
-/// 将缺省、旧版未限定 id 或非法选择归一化为内置默认宠物的精确 id。
-/// 合法值：默认宠物 id、预设宠物 id（~/.dsh/pets 目录，安全字符集）或来源限定 id。
+/// 将缺省、旧版未限定 id 或非法选择归一化为空字符串（未选择任何宠物）。
+/// 合法值：预设宠物 id（~/.dsh/pets 目录，安全字符集）或来源限定 id。
+/// 注意：不再默认给内置宠物 —— 全新安装下 active_pet 为空，需用户先下载再启用。
 fn normalize_active_pet(active_pet: Option<&str>) -> String {
     let Some(id) = active_pet.map(str::trim).filter(|id| !id.is_empty()) else {
-        return DEFAULT_ACTIVE_PET_ID.to_string();
+        return String::new();
     };
-    if id == DEFAULT_ACTIVE_PET_ID
-        || crate::bridge::preset_pet::safe_preset_id(id)
-        || parse_qualified_id(id).is_ok()
-    {
+    if crate::bridge::preset_pet::safe_preset_id(id) || parse_qualified_id(id).is_ok() {
         id.to_string()
     } else {
-        DEFAULT_ACTIVE_PET_ID.to_string()
+        String::new()
     }
 }
 
@@ -266,6 +263,99 @@ pub fn push_pet_session(
     .map_err(|error| format!("PET_SESSION_PUSH_FAILED: failed to emit session {id}: {error}"))
 }
 
+/// DSH 宿主会话增量 SSE 流路径（与 packages/dsh-tauri-pet/src/index.ts 的
+/// SESSION_STREAM_PATH 保持一致）。
+const SESSION_STREAM_PATH: &str = "/api/dsh-pet/session-stream";
+
+/// 会话增量「动作 → 桌宠窗口事件名」映射（与 push_pet_session 共用）。
+fn session_event_of(action: &str) -> Option<&'static str> {
+    match action {
+        "create" => Some("session:create"),
+        "update" => Some("session:update"),
+        "remove" => Some("session:remove"),
+        _ => None,
+    }
+}
+
+/// 直接把「动作 + 展示载荷」推给桌宠窗口（返回是否成功，仅用于 debug 日志）。
+fn emit_pet_session(app: &AppHandle, action: &str, payload: &Value) {
+    let Some(event) = session_event_of(action) else { return; };
+    let _ = app.emit_to(pet_window::PET_WINDOW_LABEL, event, payload.clone());
+}
+
+/// 消费宿主会话增量 SSE 流：读取 `http://127.0.0.1:<port>/api/dsh-pet/session-stream`，
+/// 每个 `data:` 帧（`{"action":...,"payload":...}`）解析后经 emit_to 直达桌宠 WebView。
+///
+/// 方案 1（host → rust → pet）：Rust 不再依赖 iframe 的 invoke 桥转发（#396 根因），
+/// 而是作为宿主流的消费者。流中断（宿主未就绪/重启）时退避重连，幂等可恢复。
+async fn consume_pet_session_stream(app: &AppHandle, url: &str) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .build()
+        .map_err(|error| error.to_string())?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer: Vec<u8> = Vec::new();
+    // SSE: data: 行累积，遇空行派发一帧；': keepalive' 注释帧忽略。
+    let mut pending_data: Vec<String> = Vec::new();
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| error.to_string())?;
+        buffer.extend_from_slice(&chunk);
+        while let Some(position) = buffer.iter().position(|&byte| byte == b'\n') {
+            let line_bytes: Vec<u8> = buffer.drain(..=position).collect();
+            let line = String::from_utf8_lossy(&line_bytes[..line_bytes.len() - 1]).into_owned();
+            let trimmed = line.trim();
+            if let Some(data) = trimmed.strip_prefix("data:") {
+                pending_data.push(data.trim().to_string());
+            }
+            else if trimmed.is_empty() {
+                if !pending_data.is_empty() {
+                    let frame: Value = serde_json::from_str(&pending_data.join("\n"))
+                        .map_err(|error| error.to_string())?;
+                    let action = frame
+                        .get("action")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let payload = frame.get("payload").cloned().unwrap_or(Value::Null);
+                    emit_pet_session(app, &action, &payload);
+                    pending_data.clear();
+                }
+            }
+            // 其余（'：' 开头的注释帧等）忽略。
+        }
+    }
+    Ok(())
+}
+
+/// 启动「宿主会话增量 SSE」消费后台任务（见 consume_pet_session_stream）。
+/// 应用 setup 时调用一次；内部无限重连。
+pub fn spawn_pet_session_stream(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let setting = config::get_store_dat_setting(&app);
+            let url = format!("http://127.0.0.1:{}{}", setting.port, SESSION_STREAM_PATH);
+            match consume_pet_session_stream(&app, &url).await {
+                Ok(()) => {
+                    log::info!("[pet-stream] host session stream ended; reconnecting in 2s");
+                }
+                Err(error) => {
+                    log::warn!("[pet-stream] host session stream error: {error}; reconnecting in 2s");
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
+}
+
 /// 按物理像素增量移动桌宠窗口，限制在可见显示器并保存最终位置。
 ///
 /// 缩放（`pet://status` 收到新 pet_size）后由 pet WebView 调用 `move_pet_window(0, 0)`
@@ -303,6 +393,45 @@ pub fn hide_pet(app: AppHandle) -> Result<PetStatus, String> {
     let status = status_from_setting(&config::get_store_dat_setting(&app));
     emit_pet_status(&app, &status);
     Ok(status)
+}
+
+/// pet 窗口点击穿透开关；返回实际生效的穿透态，前端据此对齐本地 optimistic 状态。
+///
+/// # 为什么不直接用 `setIgnoreCursorEvents`（issue #437）
+///
+/// Linux 下 tao 处理 `CursorIgnoreEvents(true)` 时对 GtkWindow 的底层 GdkWindow
+/// 直接 `unwrap()`（tao 0.35.3 event_loop.rs:457，截至 0.37.0 上游仍未修复），
+/// 窗口从未显示（未 realize，GdkWindow 不存在）即 panic；panic 发生在 GTK
+/// 事件循环回调里无法回卷 → SIGABRT，整个桌面端崩溃。而本应用在 setup 阶段
+/// 总会预创建隐藏的 pet 窗口（`desktop::pet::init_pet_window`，全新安装默认
+/// 不启用桌宠则永远不 show），其 webview 仍会加载 pet.html 并在收到首个全局
+/// 鼠标事件时请求穿透——这正是 v0.11.0 初始化阶段必崩的路径。
+///
+/// 因此所有穿透切换必须经由此命令：窗口不可见（GTK 未 map，必然未 realize）
+/// 时吞掉 `true` 请求并返回未生效；`false`（恢复接收事件）在 tao 走无 unwrap
+/// 的分支，始终安全转发。GTK 窗口 hide 只 unmap 不 unrealize，首次 show 之后
+/// GdkWindow 持续存在，故「可见 ⇒ 转发安全」。
+#[tauri::command]
+pub fn set_pet_ignore_cursor_events(window: WebviewWindow, ignore: bool) -> Result<bool, String> {
+    if window.label() != pet_window::PET_WINDOW_LABEL {
+        return Err(
+            "PET_WINDOW_LABEL_MISMATCH: this command is restricted to the pet window".to_string(),
+        );
+    }
+    if ignore {
+        let visible = window
+            .is_visible()
+            .map_err(|error| format!("PET_WINDOW_STATE_FAILED: {error}"))?;
+        if !visible {
+            // 隐藏窗口的穿透无意义：吞掉并上报「未生效」，避免 tao 在未
+            // realize 窗口上的 unwrap panic（issue #437）。
+            return Ok(false);
+        }
+    }
+    window
+        .set_ignore_cursor_events(ignore)
+        .map_err(|error| format!("PET_CURSOR_IGNORE_FAILED: {error}"))?;
+    Ok(ignore)
 }
 
 /// 返回来源对应的真实目录；chat 直接使用 `$DSH_HOME/pets`，codex 直接使用
@@ -347,9 +476,9 @@ fn parse_qualified_id(id: &str) -> Result<(PetSource, &str), String> {
     Ok((source, manifest_id))
 }
 
-/// 校验激活宠物 id：默认宠物、预设宠物（安全字符集）或来源限定 id。
+/// 校验激活宠物 id：预设宠物（安全字符集）或来源限定 id。
 fn validate_active_pet_id(id: &str) -> Result<(), String> {
-    if id == DEFAULT_ACTIVE_PET_ID || crate::bridge::preset_pet::safe_preset_id(id) {
+    if crate::bridge::preset_pet::safe_preset_id(id) {
         return Ok(());
     }
     parse_qualified_id(id).map(|_| ())
@@ -936,9 +1065,10 @@ mod tests {
     }
 
     #[test]
-    fn active_pet_defaults_to_exact_builtin_id() {
-        assert_eq!(normalize_active_pet(None), DEFAULT_ACTIVE_PET_ID);
-        assert_eq!(normalize_active_pet(Some("   ")), DEFAULT_ACTIVE_PET_ID);
+    fn active_pet_defaults_to_empty_when_unset_or_invalid() {
+        // 全新安装不再默认选中内置宠物：缺省/空白/非法 id 一律归一为空串（未选择）。
+        assert_eq!(normalize_active_pet(None), "");
+        assert_eq!(normalize_active_pet(Some("   ")), "");
         assert_eq!(
             normalize_active_pet(Some(" chat:custom-pet ")),
             "chat:custom-pet",
@@ -949,14 +1079,14 @@ mod tests {
             "codex:custom_pet"
         );
         // 未限定 id（预设宠物，安全字符集）与来源限定 id 都是合法激活选择；
-        // 只有非法字符集 / 未知来源限定才回落内置宠物。
+        // 只有非法字符集 / 未知来源限定才归一为空串（未选择任何宠物）。
         assert_eq!(normalize_active_pet(Some("cat")), "cat");
         assert_eq!(normalize_active_pet(Some("shiba")), "shiba");
         for legacy_or_invalid in ["other:pet", "chat:../pet", "bad id", "x/y"] {
             assert_eq!(
                 normalize_active_pet(Some(legacy_or_invalid)),
-                DEFAULT_ACTIVE_PET_ID,
-                "旧版或非法 id {legacy_or_invalid} 应回落内置宠物"
+                "",
+                "旧版或非法 id {legacy_or_invalid} 应归一为空串（未选择宠物）"
             );
         }
     }
@@ -970,7 +1100,7 @@ mod tests {
         let status = status_from_setting(&setting);
         assert!(!status.enabled);
         assert!(!status.visible);
-        assert_eq!(status.active_pet, DEFAULT_ACTIVE_PET_ID);
+        assert_eq!(status.active_pet, "");
     }
 
     #[test]

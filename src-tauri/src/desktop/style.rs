@@ -5,7 +5,7 @@
 //! 其余平台 `initialization_script_for_all_frames`），因此 iframe 每次重新加载都会重建。
 //!
 //! 本脚本只负责把一段内置 CSS 以 `<style>` 元素注入 iframe 文档（幂等：按 id 去重）。
-//! 具体样式写在下方的 `IFRAME_CSS` 模板字符串里（当前是占位，按需填写/替换即可）。
+//! 具体样式写在下方的 `css` 模板字符串里，兼容内嵌插件的面板控件。
 
 /// 注入 `<style>` 的脚本（带 `__dsh_iframe_styles__` 幂等守卫，重复注入安全）。
 /// 样式直接写在 `css` 模板字符串里，改这里即可。
@@ -15,10 +15,19 @@ pub(crate) const IFRAME_STYLES_JS: &str = r#"(function () {
 
   var STYLE_ID = 'dsh-desktop-injected-styles';
 
-  // ══ 在这里按需填写注入到 dsh iframe 页面的自定义样式``` ════
+  // 优先使用插件的稳定标记，旧版插件保留类名兼容。
+  // 页面按 aria-label 隐藏左侧收起按钮的规则会误伤右侧面板，这里只恢复面板开关。
   var css = `
-    .nArs4W_toggleCluster {top:6px !important; right: 6px !important; gap: 2px !important;}
-    .nArs4W_toggleButton {border-radius: 8px !important;}
+    [data-dsh-toggle-cluster], .nArs4W_toggleCluster {
+      top: 6px !important;
+      right: 6px !important;
+      gap: 2px !important;
+    }
+    [data-dsh-toggle-cluster] button[aria-label], .nArs4W_toggleCluster button[aria-label] {
+      display: flex !important;
+      border-radius: 8px !important;
+      flex-shrink: 0;
+    }
   `;
 
   function apply() {

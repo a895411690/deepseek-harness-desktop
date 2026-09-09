@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, Runtime};
 
 use super::constants::*;
@@ -197,15 +198,28 @@ pub fn get_local_node_path() -> Option<PathBuf> {
     is_supported_node_version(&version).then_some(node)
 }
 
-/// Node.js 二进制路径
+/// 原生模块 ABI 探测结论：本地 Node 无法加载活动核心的原生模块时，本进程内
+/// 强制改用捆绑运行时。
 ///
-/// 优先级：本地版本兼容的 Node.js 环境 > 已安装的捆绑运行时
-pub fn get_node_binary_path(app_handle: &tauri::AppHandle) -> PathBuf {
-    if let Some(local_node) = get_local_node_path() {
-        log::debug!("Using local Node.js: {}", local_node.display());
-        return local_node;
-    }
+/// 由 `service::core::runtime::prepare_active_runtime` 在拉起 dsh 之前探测并设置：
+/// 原生模块的 ABI 在构建期确定（预打包核心由 pkg 构建期的 Node 决定），而本地 Node
+/// 只按 semver 挑选，可能与其不匹配（issue #441：Node 25 的 ABI 141 加载 ABI 137 的
+/// `fs_ext.node`）。置位后所有 node 解析（服务进程、`DSH_NODE` 注入、运行环境展示）
+/// 统一走捆绑运行时，避免各处各选一个运行时。
+static PREFER_BUNDLED_NODE_RUNTIME: AtomicBool = AtomicBool::new(false);
 
+/// 是否因原生模块 ABI 不匹配而强制使用捆绑运行时
+pub fn prefer_bundled_node_runtime() -> bool {
+    PREFER_BUNDLED_NODE_RUNTIME.load(Ordering::Relaxed)
+}
+
+/// 设置捆绑运行时偏好（仅由启动前的原生模块探测调用）
+pub fn set_prefer_bundled_node_runtime(prefer: bool) {
+    PREFER_BUNDLED_NODE_RUNTIME.store(prefer, Ordering::Relaxed);
+}
+
+/// 已安装的捆绑运行时 node 二进制（未安装时返回 None）
+pub fn bundled_node_binary(app_handle: &tauri::AppHandle) -> Option<PathBuf> {
     let runtime_dir = get_node_install_path(app_handle);
     // 使用 cfg 宏在编译时确定文件名
     let (rel_path, bin_name) = if cfg!(windows) {
@@ -215,11 +229,45 @@ pub fn get_node_binary_path(app_handle: &tauri::AppHandle) -> PathBuf {
     };
     let direct_path = runtime_dir.join(rel_path).join(bin_name);
     if direct_path.exists() {
-        direct_path
+        Some(direct_path)
     } else {
         // 只有在直接路径不存在时才进行开销较大的递归搜索
-        search_node_binary(&runtime_dir, bin_name).unwrap_or(direct_path)
+        search_node_binary(&runtime_dir, bin_name)
     }
+}
+
+/// Node.js 二进制路径
+///
+/// 优先级：ABI 探测要求捆绑运行时（原生模块不匹配时的兜底）> 本地版本兼容的
+/// Node.js 环境 > 已安装的捆绑运行时
+pub fn get_node_binary_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let runtime_dir = get_node_install_path(app_handle);
+    let (rel_path, bin_name) = if cfg!(windows) {
+        ("", "node.exe")
+    } else {
+        ("bin", "node")
+    };
+    let bundled = bundled_node_binary(app_handle);
+
+    if prefer_bundled_node_runtime() {
+        if let Some(bundled) = bundled.clone() {
+            log::debug!(
+                "Using bundled Node.js runtime (native ABI override): {}",
+                bundled.display()
+            );
+            return bundled;
+        }
+        log::warn!(
+            "Bundled Node.js runtime is required by the native module ABI check but is not installed"
+        );
+    }
+
+    if let Some(local_node) = get_local_node_path() {
+        log::debug!("Using local Node.js: {}", local_node.display());
+        return local_node;
+    }
+
+    bundled.unwrap_or_else(|| runtime_dir.join(rel_path).join(bin_name))
 }
 
 pub fn get_node_install_path(app_handle: &tauri::AppHandle) -> PathBuf {
@@ -451,12 +499,21 @@ pub fn get_bundled_node_version() -> String {
 
 /// 当前实际使用的 Node.js 版本号（本地 Node 优先，其次捆绑运行时）
 pub fn get_active_node_version() -> String {
-    if let Some(local_node) = get_local_node_path() {
-        if let Some(version) = get_node_version_of(&local_node) {
-            return version;
+    // ABI 探测要求捆绑运行时时不能再展示本地 node 版本：界面显示必须与实际
+    // 拉起的服务进程一致（否则用户看到的版本与日志里的运行时对不上）。
+    if !prefer_bundled_node_runtime() {
+        if let Some(local_node) = get_local_node_path() {
+            if let Some(version) = get_node_version_of(&local_node) {
+                return version;
+            }
         }
     }
     get_bundled_node_version()
+}
+
+/// 读取任意 node 二进制的版本号（诊断信息用，例如 "v25.8.2"）
+pub fn get_node_version_of_path(node: &Path) -> Option<String> {
+    get_node_version_of(node)
 }
 
 fn parse_node_version(output: &str) -> Option<(u64, u64, u64)> {

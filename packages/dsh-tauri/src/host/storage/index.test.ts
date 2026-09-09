@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createAtomicFsStorage, writeAtomic } from './index'
+import { createAtomicFsStorage, writeAtomic } from '.'
 
 /** 每个用例独立的临时目录，避免跨用例污染。 */
 function tempDir(): string {
@@ -96,7 +96,7 @@ describe('原子写 EPERM 锁竞争重试', () => {
     })
     // 从被 mock 的模块重新导入被测对象，确保其内部引用同一 rename。
     vi.resetModules()
-    const { writeAtomic: writeAtomicRetry } = await import('./index')
+    const { writeAtomic: writeAtomicRetry } = await import('.')
 
     await expect(writeAtomicRetry(target, 'finally-ok')).resolves.toBeUndefined()
     await expect(
@@ -120,7 +120,7 @@ describe('原子写 EPERM 锁竞争重试', () => {
       }
     })
     vi.resetModules()
-    const { writeAtomic: writeAtomicFail } = await import('./index')
+    const { writeAtomic: writeAtomicFail } = await import('.')
 
     await expect(writeAtomicFail(target, 'nope')).rejects.toMatchObject({ code: 'EPERM' })
     const { readdir } = await import('node:fs/promises')

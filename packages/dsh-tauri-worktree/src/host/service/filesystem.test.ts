@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   REMOVE_TREE_OPTIONS,
   removeDirectoryReliably,
-} from './filesystem.js'
+} from './filesystem'
 
 const temporaryDirectories: string[] = []
 

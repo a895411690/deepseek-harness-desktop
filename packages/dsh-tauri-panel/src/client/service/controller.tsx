@@ -6,7 +6,7 @@
  * 重载）时旧实例先被其 effect 清理，互不干扰。
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientContext } from 'dsh-tauri/client'
 import type { ReactElement } from 'react'
 import type { PanelContentSpec } from '../types'
 import type { PanelWidthController } from './width'
@@ -20,9 +20,9 @@ import { createPanelWidthController } from './width'
 
 /** 会话区替换控制器的对外形状（panel.protocol 的机制侧）。 */
 export interface PanelConversationController {
-  open: (ctx: Context, spec: PanelContentSpec) => void
+  open: (ctx: ClientContext, spec: PanelContentSpec) => void
   close: () => void
-  toggle: (ctx: Context, spec: PanelContentSpec) => void
+  toggle: (ctx: ClientContext, spec: PanelContentSpec) => void
   viewId: () => { id: string } | null
   /** 内容宽度控制器（方案 A：attach/handle；方案 C：setWidth/resetWidth/getWidth）。 */
   width: PanelWidthController
@@ -43,7 +43,7 @@ export function createPanelConversationController(): PanelConversationController
   let onPointerDownCapture: ((event: PointerEvent) => void) | undefined
 
   /** 打开会话区替换：动态注册 priority -1 的 conversation 条目。 */
-  function open(ctx: Context, spec: PanelContentSpec): void {
+  function open(ctx: ClientContext, spec: PanelContentSpec): void {
     if (currentSpec && currentSpec.id === spec.id)
       return
     if (conversationSeat)

@@ -106,6 +106,7 @@ catalogs:
     '@types/semver': ^7.8.0
   # UI 呈现（插件渲染富文本/样式）
   ui:
+    '@css-render/plugin-bem': ^0.15.7
     css-render: ^0.15.14
     dompurify: ^3.4.13
     marked: ^18.0.10

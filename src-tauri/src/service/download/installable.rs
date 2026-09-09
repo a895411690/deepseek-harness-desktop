@@ -40,6 +40,12 @@ impl Installable for Nodejs {
         config::get_node_install_path(app)
     }
     fn check_installed(&self, app: &AppHandle) -> bool {
+        // 原生模块 ABI 探测已判定本地 node 无法加载核心的原生模块（issue #441）：
+        // 此时不能再以"本机有版本兼容的 node"为由跳过捆绑运行时，否则服务进程仍会
+        // 用那个 ABI 不匹配的运行时启动。
+        if config::prefer_bundled_node_runtime() {
+            return config::bundled_node_binary(app).is_some() && config::is_runtime_compatible(app);
+        }
         if let Some(local_node) = config::get_local_node_path() {
             log::info!(
                 "Detected compatible local Node.js ({}), skipping bundled runtime",

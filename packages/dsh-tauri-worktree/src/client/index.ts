@@ -15,23 +15,27 @@
  * 与 node half（host/）经 /api/dsh-worktree/* 通信（create/status/checkout/discard）。
  */
 import type { ClientContext } from 'dsh-tauri/client'
+import { mountStyle } from 'dsh-tauri-ui/client'
 import { compat } from 'dsh-tauri/client'
+import modeSelectStyle from './components/mode-select.cssr'
 import {
   HYDRATION_EFFECT,
   MODE_SELECT_EFFECT,
+  MODE_SELECT_STYLE_ID,
   SESSION_ICONS_EFFECT,
   STYLES_EFFECT,
   SURFACE_EFFECT,
   WORKTREE_PLUGIN_NAME,
+  WORKTREE_STYLE_ID,
 } from './constants'
-import { installLocale } from './locales'
+import { registerLocale } from './locales'
 import { registerDialog } from './register/dialog'
-import { installWorktreeHydration } from './register/hydration'
+import { registerWorktreeHydration } from './register/hydration'
 import { registerModeSelect } from './register/mode-select'
-import { installSessionIcons } from './register/session-icons'
+import { registerSessionIcons } from './register/session-icons'
 import { registerSurface } from './register/surface'
 import { hydratePreferredMode } from './store'
-import { mountModeSelectStyles, mountWorktreeStyles } from './styles'
+import worktreeIndexStyle from './styles/index.cssr'
 
 export { WORKTREE_API_PREFIX } from '../shared/constants'
 export type * from './types'
@@ -48,16 +52,16 @@ export const inject = ['slots', 'layout', 'locale', 'sessions', 'workspaces']
  */
 export function apply(ctx: ClientContext): void {
   const cx = compat(ctx)
-  installLocale(cx)
+  registerLocale(cx)
   // 新会话偏好（本地/工作树）异步读回一次，未就绪前保持官方默认「本地」。
   void hydratePreferredMode()
   ctx.effect(
     () => {
-      const unmountModeSelectStyles = mountModeSelectStyles()
-      const unmountWorktreeStyles = mountWorktreeStyles()
+      const disposeModeSelect = mountStyle(modeSelectStyle, MODE_SELECT_STYLE_ID)
+      const disposeWorktree = mountStyle(worktreeIndexStyle, WORKTREE_STYLE_ID)
       return () => {
-        unmountModeSelectStyles()
-        unmountWorktreeStyles()
+        disposeModeSelect()
+        disposeWorktree()
       }
     },
     STYLES_EFFECT,
@@ -66,6 +70,6 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => registerModeSelect(cx), MODE_SELECT_EFFECT)
   ctx.effect(() => registerSurface(cx), SURFACE_EFFECT)
   registerDialog(cx)
-  ctx.effect(() => installWorktreeHydration(cx), HYDRATION_EFFECT)
-  ctx.effect(() => installSessionIcons(), SESSION_ICONS_EFFECT)
+  ctx.effect(() => registerWorktreeHydration(cx), HYDRATION_EFFECT)
+  ctx.effect(() => registerSessionIcons(), SESSION_ICONS_EFFECT)
 }

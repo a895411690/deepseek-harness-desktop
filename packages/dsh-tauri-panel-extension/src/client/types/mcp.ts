@@ -4,6 +4,11 @@ import type { Translate } from './protocol'
 
 export interface McpRow {
   id: string
+  /** Configuration layer; global rows are inherited and read-only by default. */
+  layer?: 'global' | 'profile'
+  shadowed?: boolean
+  globalError?: string
+  scope?: 'global' | 'profile'
   serverName: string
   transport: 'stdio' | 'streamable-http'
   disabled: boolean
@@ -16,7 +21,7 @@ export interface McpRow {
 }
 
 export interface ImportedServerView {
-  agent: 'claude-code' | 'codex'
+  agent: 'claude-code' | 'codex' | 'cursor' | 'gemini'
   name: string
   transport: 'stdio' | 'streamable-http'
   command?: string
@@ -24,17 +29,6 @@ export interface ImportedServerView {
   env?: Record<string, string>
   url?: string
   headers?: Record<string, string>
-}
-
-export interface McpInjected {
-  list: () => Promise<{ servers: McpRow[] }>
-  save: (input: Record<string, unknown>) => Promise<{ ok: boolean, id: string }>
-  toggle: (id: string, disabled: boolean) => Promise<{ ok: boolean }>
-  remove: (id: string) => Promise<{ ok: boolean }>
-  scanImport: () => Promise<{ servers: ImportedServerView[], existing: string[] }>
-  applyImport: (items: Array<{ agent: string, name: string }>) => Promise<{ ok: boolean, results: Array<{ name: string, ok: boolean, error?: string }> }>
-  restart: () => Promise<void>
-  desktop: boolean
 }
 
 export type McpEditorMode = 'json' | 'form'
@@ -68,5 +62,4 @@ export interface ParsedMcpJson {
 
 export interface McpTabProps {
   t: Translate
-  injected: McpInjected
 }

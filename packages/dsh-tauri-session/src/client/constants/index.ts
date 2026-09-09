@@ -18,38 +18,6 @@ export const SESSION_ARCHIVE_PATCH_EFFECT = `${SESSION_PLUGIN_NAME}: workspace a
 export const SESSION_ARCHIVE_SECTION_EFFECT = `${SESSION_PLUGIN_NAME}: archive section`
 
 /** css-render class prefix (value 仅用于样式命名，不作为协议). */
-export const SESSION_CLASSES = {
-  page: 'dsh-tauri-session-page',
-  header: 'dsh-tauri-session-header',
-  title: 'dsh-tauri-session-title',
-  deleteAll: 'dsh-tauri-session-delete-all',
-  toolbar: 'dsh-tauri-session-toolbar',
-  search: 'dsh-tauri-session-search',
-  menuSelect: 'dsh-tauri-session-menu-select',
-  menuSelectLabel: 'dsh-tauri-session-menu-select-label',
-  menuSelectChevron: 'dsh-tauri-session-menu-select-chevron',
-  groups: 'dsh-tauri-session-groups',
-  group: 'dsh-tauri-session-group',
-  groupHeader: 'dsh-tauri-session-group-header',
-  groupTitle: 'dsh-tauri-session-group-title',
-  groupCount: 'dsh-tauri-session-group-count',
-  groupMenu: 'dsh-tauri-session-group-menu',
-  groupMenuTrigger: 'dsh-tauri-session-group-menu-trigger',
-  list: 'dsh-tauri-session-list',
-  row: 'dsh-tauri-session-row',
-  rowMain: 'dsh-tauri-session-row-main',
-  rowTitle: 'dsh-tauri-session-row-title',
-  rowTime: 'dsh-tauri-session-row-time',
-  rowActions: 'dsh-tauri-session-row-actions',
-  rowDelete: 'dsh-tauri-session-row-delete',
-  unarchive: 'dsh-tauri-session-unarchive',
-  deleteBtn: 'dsh-tauri-session-delete-btn',
-  deleteBtnText: 'dsh-tauri-session-delete-btn-text',
-  empty: 'dsh-tauri-session-empty',
-  error: 'dsh-tauri-session-error',
-  toastView: 'dsh-tauri-session-toast-view',
-  archiveMenuItem: 'dsh-tauri-session-archive-menu-item',
-} as const
 
 /**
  * Sync strings for matching the official workspace-row menu's delete item

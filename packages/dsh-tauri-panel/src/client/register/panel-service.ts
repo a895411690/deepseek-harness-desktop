@@ -13,7 +13,7 @@
  *     自己 live 后渲染官方条目 = 自递归（无公开 API 渲染被 shadow 条目）。
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientContext } from 'dsh-tauri/client'
 import type { PanelProtocol } from '../types'
 import { PanelActionItem } from '../components/action-item'
 import { PANEL_PROTOCOL_SERVICE } from '../constants'
@@ -31,7 +31,7 @@ import { createPanelConversationController } from '../service/controller'
  * 核心时降级为不提供该字段）。
  * @param ctx - 客户端根上下文。
  */
-export function installPanelService(ctx: Context): void {
+export function registerPanelService(ctx: ClientContext): void {
   const controller = createPanelConversationController()
   const api: PanelProtocol = {
     ActionItem: PanelActionItem,

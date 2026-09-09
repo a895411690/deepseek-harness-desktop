@@ -1,4 +1,4 @@
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientContext } from 'dsh-tauri/client'
 import { SettingsSidebar } from '../components/sidebar'
 import {
   SETTINGS_REGISTRANT,
@@ -13,13 +13,13 @@ import {
  * 由父条目 children 表声明，故用 inject 等其声明 live 后再注册。
  * @param ctx - 客户端根上下文。
  */
-export function registerSettingsSidebar(ctx: Context): void {
+export function registerSettingsSidebar(ctx: ClientContext): void {
   ctx.effect(
     () =>
       ctx.slots.inject(SETTINGS_SHELL_OVERLAY_SLOT, () =>
         ctx.slots.register(
-          { name: SETTINGS_SHELL_OVERLAY_SLOT, id: SETTINGS_SIDEBAR_ID, registrant: SETTINGS_REGISTRANT },
-          SettingsSidebar,
+          { name: SETTINGS_SHELL_OVERLAY_SLOT, id: SETTINGS_SIDEBAR_ID, registrant: SETTINGS_REGISTRANT, inject: () => ({}) } as never,
+          SettingsSidebar as never,
         )),
     'dsh-tauri-ui: settings sidebar',
   )

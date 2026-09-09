@@ -21,10 +21,14 @@ import { SlotOutlet } from '@deepseek-ai/dsh-client-ui-renderer'
 import { useCallback, useEffect, useState } from 'react'
 import {
   SETTINGS_TRIGGER_SLOT,
+  SETTINGS_TRIGGER_STYLE_ID,
 } from '../constants'
 
 import { useSettingsOnboardingSteps } from '../hooks/sections'
 import { openSettings, useSettingsUi } from '../store'
+
+import { useMountStyle } from '../style'
+import settingsTriggerStyle from './trigger.cssr'
 
 /**
  * 触发组件：侧栏脚部的齿轮按钮 + 空会话引导宿主。
@@ -36,6 +40,7 @@ import { openSettings, useSettingsUi } from '../store'
 export function SettingsTrigger({ wide, useSessions }: SettingsTriggerProps): ReactElement {
   const ui = useSettingsUi()
   const steps = useSettingsOnboardingSteps()
+  useMountStyle(settingsTriggerStyle, SETTINGS_TRIGGER_STYLE_ID)
   const [completed, setCompleted] = useState<Set<string>>(() => new Set())
 
   // 官方同款引导谓词：就绪且（无当前会话 或 当前会话空日志）→ 引导激活。
@@ -68,7 +73,7 @@ export function SettingsTrigger({ wide, useSessions }: SettingsTriggerProps): Re
         aria-haspopup="dialog"
         aria-expanded={ui.open}
         onClick={() => openSettings()}
-        className={`dsh-tu-settingsTrigger${wide ? '' : ' dsh-tu-settingsTriggerRail'}`}
+        className={`dshp-settings-trigger${wide ? '' : ' dshp-settings-trigger--rail'}`}
       >
         <SlotOutlet slotKey={SETTINGS_TRIGGER_SLOT} ownerProps={{ wide }} />
       </button>

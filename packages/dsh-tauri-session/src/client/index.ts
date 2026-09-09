@@ -7,11 +7,10 @@
 
 import type { ClientContext } from 'dsh-tauri/client'
 import { compat } from 'dsh-tauri/client'
-import { SESSION_ARCHIVE_PATCH_EFFECT, SESSION_STYLES_EFFECT } from './constants'
-import { installWorkspaceArchivePatch } from './dom/workspace-patch'
-import { installLocale } from './locales'
+import { SESSION_ARCHIVE_PATCH_EFFECT } from './constants'
+import { registerWorkspaceArchivePatch } from './dom/workspace-patch'
+import { registerLocale } from './locales'
 import { registerArchiveSection } from './register/archive-section'
-import { mountSessionStyles } from './styles'
 
 /** 插件显示名（诊断元数据）。 */
 export const name = 'dsh-tauri-session'
@@ -25,13 +24,11 @@ export const inject = ['slots', 'locale', 'sessions', 'workspaces']
  */
 export function apply(ctx: ClientContext): void {
   const cx = compat(ctx)
-  installLocale(cx)
-
-  ctx.effect(() => mountSessionStyles(), SESSION_STYLES_EFFECT)
+  registerLocale(cx)
 
   // 1) 设置页「归档」分区（settings.section 单槽注册；导航行/内容由官方设置侧边栏投影）。
   registerArchiveSection(cx)
 
   // 2) 工作区浏览器补丁：替换「删除工作区」+ 隐藏归档会话行。
-  ctx.effect(() => installWorkspaceArchivePatch(cx.workspaces as unknown as import('./types').WorkspacesRuntimeLike, cx.sessions as unknown as import('./types').SessionsRuntimeLike), SESSION_ARCHIVE_PATCH_EFFECT)
+  ctx.effect(() => registerWorkspaceArchivePatch(cx.workspaces as unknown as import('./types').WorkspacesRuntimeLike, cx.sessions as unknown as import('./types').SessionsRuntimeLike), SESSION_ARCHIVE_PATCH_EFFECT)
 }

@@ -34,20 +34,7 @@ export interface SkillEditorState {
 
 export type OpenTarget = { target: 'user-skills' } | { target: 'skill', name: string }
 
-export interface SkillsInjected {
-  list: () => Promise<{ skills: SkillRowView[] }>
-  /** Force a host-side rescan of all skill roots, returning the refreshed list. */
-  refresh: () => Promise<{ skills: SkillRowView[] }>
-  get: (name: string) => Promise<{ content: string }>
-  save: (input: Record<string, unknown>) => Promise<{ ok: boolean }>
-  remove: (name: string) => Promise<{ ok: boolean }>
-  policy: (name: string, enabled: boolean) => Promise<{ ok: boolean }>
-  open: (target: OpenTarget) => Promise<{ ok: boolean }>
-  importRepository: (url: string) => Promise<{ ok: boolean }>
-}
-
 export interface SkillsTabProps {
   t: Translate
-  injected: SkillsInjected
   createSkill: () => Promise<void>
 }

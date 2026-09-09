@@ -11,6 +11,7 @@
 - 设置打开期间持续隐藏并禁用宿主内容列及异步挂载的 Better Sidebar，关闭时精确恢复原状态。
 - 提供中英文的返回应用、搜索设置等文案。
 - renderer 缺少 `SlotOutlet` 时自动保留官方设置对话框。
+- 作为 workspace 共享 UI 面导出 `MenuSelect`、`styles` 与 Gravity UI 图标适配器；其他内置插件统一从 `dsh-tauri-ui/client` 引用，不再复制下拉模式或自绘通用图标。
 
 ## 兼容性
 
